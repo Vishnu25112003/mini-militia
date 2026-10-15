@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import Phaser from 'phaser';
-import { HelloScene } from './HelloScene';
+import { MapScene } from './MapScene';
 
 export function GameCanvas() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -14,7 +14,7 @@ export function GameCanvas() {
       width: 800,
       height: 450,
       parent: containerRef.current,
-      scene: [HelloScene],
+      scene: [MapScene],
     });
 
     return () => {

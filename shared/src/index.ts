@@ -19,6 +19,10 @@ export * from './types/match.js';
 export * from './physics/map.js';
 export * from './physics/step.js';
 
+// Maps
+export * from './maps/tileset.js';
+export * from './maps/loadMap.js';
+
 // Logic
 export * from './logic/damage.js';
 export * from './logic/melee.js';
