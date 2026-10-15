@@ -42,7 +42,11 @@ npm run dev
 - Server runs on `ws://localhost:2567` (health check at `http://localhost:2567/health`)
 - Client runs on `http://localhost:5173` (Vite's default port)
 
-Open the client URL in a browser — it renders the Catacombs-style map (press **M** to toggle spawn/pickup debug markers) and shows a small connection status line in the corner that proves the client ↔ server handshake still works.
+Open the client URL in a browser — it drops you into the local movement sandbox: one player, no network, on the real map, driven by the shared physics. A small connection status line in the corner proves the client ↔ server handshake still works.
+
+- **PC:** A/D move, W or Space fly, S crouch, mouse aim, left click fire (no gun wired up yet), V/G/R/E log their press to the console (melee/grenade/reload/pickup — wired up in Phases 07-10), right click cycles zoom, **M** toggles spawn/pickup debug markers.
+- **Touch:** left joystick moves/flies/crouches, right joystick aims (holding = fire), buttons log their press the same as PC, top-left button cycles zoom.
+- A dev-only panel (top-right, only in `npm run dev`) lets you change gravity and boost live to check both settings behave as the flow describes.
 
 If you change `shared/src`, re-run `npm run build:shared` (or `npm run dev --workspace=shared` in a separate terminal to rebuild on save) so the compiled `dist/` output client and server import stays current.
 

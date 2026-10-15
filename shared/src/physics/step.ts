@@ -104,7 +104,10 @@ export function step(
   settings: PhysicsSettings,
 ): PlayerState {
   const crouching = state.onGround && input.crouch;
-  const facing: Facing = input.moveX > 0 ? 'right' : input.moveX < 0 ? 'left' : state.facing;
+  // Facing follows aim, not movement: the crouch shield and melee direction
+  // (logic/damage.ts, logic/melee.ts) are about which way the player is
+  // looking/shooting, same as the real game's aim-driven character turning.
+  const facing: Facing = Math.cos(input.aimAngle) >= 0 ? 'right' : 'left';
 
   const vx = crouching ? 0 : input.moveX * MOVEMENT.walkSpeedPxPerSec;
   const flying = input.fly && state.fuel > 0 && !crouching;

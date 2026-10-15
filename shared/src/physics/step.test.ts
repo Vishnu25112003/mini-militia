@@ -71,7 +71,6 @@ describe('step — walking', () => {
 
     const moved = step(player, { ...NO_INPUT, moveX: 1 }, map, NORMAL_SETTINGS);
     expect(moved.position.x).toBeCloseTo(80 + MOVEMENT.walkSpeedPxPerSec / MOVEMENT.tickRate);
-    expect(moved.facing).toBe('right');
   });
 
   it('crouching (on the ground, pulling down) stops horizontal movement', () => {
@@ -90,6 +89,26 @@ describe('step — walking', () => {
     const moved = step(player, { ...NO_INPUT, moveX: 1, crouch: true }, map, NORMAL_SETTINGS);
     expect(moved.crouching).toBe(false);
     expect(moved.position.x).not.toBe(80);
+  });
+});
+
+describe('step — facing', () => {
+  it('follows aim direction, not movement direction', () => {
+    const map = buildMap(['.....', '.....', '#####']);
+    const player = makePlayer({ position: { x: 80, y: 40 }, onGround: true, facing: 'left' });
+
+    // Walking left but aiming right (aimAngle 0) faces right.
+    const aimingRight = step(player, { ...NO_INPUT, moveX: -1, aimAngle: 0 }, map, NORMAL_SETTINGS);
+    expect(aimingRight.facing).toBe('right');
+
+    // Walking right but aiming left (aimAngle = π) faces left.
+    const aimingLeft = step(
+      player,
+      { ...NO_INPUT, moveX: 1, aimAngle: Math.PI },
+      map,
+      NORMAL_SETTINGS,
+    );
+    expect(aimingLeft.facing).toBe('left');
   });
 });
 

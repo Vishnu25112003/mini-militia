@@ -37,7 +37,7 @@ Own 2D jetpack shooter that plays like Mini Militia Classic, with **friends play
 | 00 | [[Phase 00 - Project Setup]] | Client + server + shared connected, deployed to Vercel + VPS | 🟨 (local done, deploy pending) |
 | 01 | [[Phase 01 - Shared Core]] | All rules, stats, physics, scoring as tested shared code | ✅ (awaiting Dev4 approval) |
 | 02 | [[Phase 02 - Map]] | Original Catacombs-style map in Tiled, validated | 🟨 (done; needs Dev4 visual check) |
-| 03 | [[Phase 03 - Local Movement Sandbox]] | Movement, jetpack, crouch, touch + PC controls (offline) | ⬜ |
+| 03 | [[Phase 03 - Local Movement Sandbox]] | Movement, jetpack, crouch, touch + PC controls (offline) | 🟨 (built; needs Dev4 playtest) |
 | 04 | [[Phase 04 - Networking Foundation]] | 8 players in sync over the internet | ⬜ |
 | 05 | [[Phase 05 - Room and Lobby]] | Names, room codes, lobby, start / auto-start, lobby chat | ⬜ |
 | 06 | [[Phase 06 - Host Settings and Default Loadout]] | 6 host settings working | ⬜ |

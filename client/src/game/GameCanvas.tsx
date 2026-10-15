@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import Phaser from 'phaser';
-import { MapScene } from './MapScene';
+import { SandboxScene } from './SandboxScene';
 
 export function GameCanvas() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -14,7 +14,11 @@ export function GameCanvas() {
       width: 800,
       height: 450,
       parent: containerRef.current,
-      scene: [MapScene],
+      scene: [SandboxScene],
+      disableContextMenu: true,
+      // Phaser only tracks 2 pointers by default (mouse + 1 touch) — the
+      // touch layout needs both joysticks plus a button at once.
+      input: { activePointers: 4 },
     });
 
     return () => {
