@@ -36,4 +36,14 @@ export interface PlayerWireState {
   fuel: number;
   color: string;
   name: string;
+  /** Lobby-only: has this player pressed Start? Unused once the match is playing. */
+  ready: boolean;
+}
+
+/** Mirrors `server/src/schema/MatchRoomState.ts`. */
+export interface MatchRoomWireState {
+  phase: 'lobby' | 'playing' | 'ended';
+  roomCode: string;
+  hostSessionId: string;
+  autoStartRemainingSeconds: number;
 }

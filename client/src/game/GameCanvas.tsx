@@ -15,8 +15,8 @@ export function GameCanvas({ sceneData }: { sceneData: MatchSceneData }) {
       height: 450,
       parent: containerRef.current,
       // No `scene` here — added below via `scene.add(..., autoStart, data)`
-      // so MatchScene's init(data) gets the player's name on its one boot,
-      // instead of booting once with no data and immediately restarting.
+      // so MatchScene's init(data) gets the already-connected room on its
+      // one boot, instead of booting once with no data and restarting.
       disableContextMenu: true,
       // Phaser only tracks 2 pointers by default (mouse + 1 touch) — the
       // touch layout needs both joysticks plus a button at once.

@@ -20,6 +20,9 @@ let installed = false;
  */
 export function installSimulatedNetworkConditions() {
   if (installed) return;
+  // No-op outside a browser (e.g. a Node-based integration test importing
+  // this module transitively) — there's no `window.WebSocket` to patch.
+  if (typeof window === 'undefined') return;
   installed = true;
 
   const NativeWebSocket = window.WebSocket;

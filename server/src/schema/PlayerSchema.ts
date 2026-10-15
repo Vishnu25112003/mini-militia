@@ -19,6 +19,8 @@ export const PlayerSchema = schema(
     fuel: t.number().default(100),
     color: t.string().default('#4363d8'),
     name: t.string().default('Player'),
+    /** Lobby-only: has this player pressed Start? Unused once the match is playing. */
+    ready: t.boolean().default(false),
   },
   'PlayerSchema',
 );

@@ -10,8 +10,8 @@ tags: [questions]
 Small details the [[Game Flow]] doesn't cover yet. They don't block the plan, but each must be **answered by Dev4 before building its phase**. Once answered, add the answer to [[Game Flow]] and tick it here.
 
 ## Phase 05 — Room & Lobby
-- [ ] Can a player removed from the lobby **re-join the same lobby** with the code before the match starts?
-- [ ] Chat message length limit? (suggestion: 100 characters)
+- [x] Can a player removed from the lobby **re-join the same lobby** with the code before the match starts? → **Yes, immediately** (Game Flow §2, "Host removal")
+- [x] Chat message length limit? (suggestion: 100 characters) → **100 characters** (Game Flow §2, "Lobby chat")
 
 ## Phase 06 — Host Settings
 - [ ] Can non-host players **view** the full settings (read-only), or only what the map card shows?
