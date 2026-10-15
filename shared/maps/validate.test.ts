@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import type { CollisionMap } from '../src/physics/map.js';
 import { loadMap, type TiledMapJson } from '../src/maps/loadMap.js';
 import {
   EXPECTED_PICKUP_COUNT,
@@ -45,5 +46,34 @@ describe('catacombs.json', () => {
     const result = validateLoadedMap(collisionMap, spawnPoints, pickupSpots);
     expect(result.errors).toEqual([]);
     expect(result.valid).toBe(true);
+  });
+});
+
+describe('validateNoPointInsideSolid — hitbox, not just the center tile', () => {
+  // A point's own tile can be open while the player's hitbox (48px tall —
+  // more than one 32px tile) still overlaps a wall one tile away. Caught for
+  // real: a spawn at the edge of the 4-tile-thick cave tunnel, where a
+  // player centered there had their feet inside the tile below the tunnel.
+  function buildTestMap(rows: string[]): CollisionMap {
+    return {
+      tileSize: 32,
+      widthInTiles: rows[0]!.length,
+      heightInTiles: rows.length,
+      isSolidTile: (x, y) => rows[y]?.[x] === '#',
+    };
+  }
+
+  it('rejects a point whose own tile is open but whose hitbox overlaps an adjacent wall', () => {
+    const map = buildTestMap(['.....', '.....', '#####']);
+    // Row 1 is open, but a player centered at its very bottom edge (y=63)
+    // has a hitbox bottom edge (63+24=87) inside row 2 (the solid floor, y>=64).
+    const point = { id: 'bad-spawn', x: 80, y: 63 };
+    expect(validateNoPointInsideSolid(map, [point])).toHaveLength(1);
+  });
+
+  it('accepts a point comfortably centered in open space', () => {
+    const map = buildTestMap(['.....', '.....', '#####']);
+    const point = { id: 'good-spawn', x: 80, y: 32 };
+    expect(validateNoPointInsideSolid(map, [point])).toEqual([]);
   });
 });

@@ -42,11 +42,16 @@ npm run dev
 - Server runs on `ws://localhost:2567` (health check at `http://localhost:2567/health`)
 - Client runs on `http://localhost:5173` (Vite's default port)
 
-Open the client URL in a browser — it drops you into the local movement sandbox: one player, no network, on the real map, driven by the shared physics. A small connection status line in the corner proves the client ↔ server handshake still works.
+Open the client URL in a browser — enter a name and hit **Join Test Room** (the real lobby is Phase 05; for now everyone lands in the same one `match_room`). The server is authoritative: it runs the real simulation, and the browser predicts your own movement instantly while smoothing everyone else's.
 
 - **PC:** A/D move, W or Space fly, S crouch, mouse aim, left click fire (no gun wired up yet), V/G/R/E log their press to the console (melee/grenade/reload/pickup — wired up in Phases 07-10), right click cycles zoom, **M** toggles spawn/pickup debug markers.
 - **Touch:** left joystick moves/flies/crouches, right joystick aims (holding = fire), buttons log their press the same as PC, top-left button cycles zoom.
-- A dev-only panel (top-right, only in `npm run dev`) lets you change gravity and boost live to check both settings behave as the flow describes.
+- A dev-only panel (top-right, only in `npm run dev`) lets you change gravity/boost for the **offline sandbox** (see below) live, and dial in artificial lag/packet-loss for the **networked match** to test bad mobile networks locally.
+- Open the client URL in two tabs (or two devices) to see multiplayer sync for real — the small text in the corner shows ping, tick rate, and your own prediction's drift from server truth.
+
+### Offline movement sandbox
+
+There's also a pure offline mode (no server, no network) left over from Phase 03, useful for quickly feeling out movement-tuning changes without needing the server running: swap `MatchScene` for `SandboxScene` in `client/src/game/GameCanvas.tsx` and `App.tsx` temporarily (it takes no `sceneData`). It's not wired into the normal app flow since Phase 04 made the networked match the primary experience.
 
 If you change `shared/src`, re-run `npm run build:shared` (or `npm run dev --workspace=shared` in a separate terminal to rebuild on save) so the compiled `dist/` output client and server import stays current.
 

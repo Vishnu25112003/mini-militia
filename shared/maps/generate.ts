@@ -24,6 +24,8 @@ import {
   gidFor,
   type TileName,
 } from '../src/maps/tileset.js';
+import { isPositionClearForPlayer } from '../src/physics/step.js';
+import type { CollisionMap } from '../src/physics/map.js';
 
 const MAP_WIDTH = 100;
 const MAP_HEIGHT = 60;
@@ -128,6 +130,21 @@ function isOpen(grid: TileKind[][], tx: number, ty: number): boolean {
   return grid[ty]?.[tx] === 'open';
 }
 
+/**
+ * A player's hitbox (48px tall) spans more than one tile, so a spawn/pickup
+ * candidate must keep the whole hitbox clear, not just the tile under its
+ * center — a single-tile check let spawns land right at the edge of the
+ * 4-tile-thick cave tunnels, overlapping the wall above or below it.
+ */
+function toCollisionMap(grid: TileKind[][]): CollisionMap {
+  return {
+    tileSize: TILE_SIZE,
+    widthInTiles: MAP_WIDTH,
+    heightInTiles: MAP_HEIGHT,
+    isSolidTile: (tx, ty) => grid[ty]?.[tx] !== 'open',
+  };
+}
+
 interface Point {
   x: number;
   y: number;
@@ -170,11 +187,13 @@ function pickSeeds(
 ): Point[] {
   const seeds: Point[] = [];
   const margin = 2;
+  const collisionMap = toCollisionMap(grid);
 
   for (let qy = margin; qy < QUAD_HEIGHT - margin && seeds.length < count; qy++) {
     for (let qx = margin; qx < QUAD_WIDTH - margin && seeds.length < count; qx++) {
       if (!isOpen(grid, qx, qy)) continue;
       const candidate = tileCenter(qx, qy);
+      if (!isPositionClearForPlayer(collisionMap, candidate.x, candidate.y)) continue;
 
       const farFromSeeds = seeds.every(
         (s) => distance(s, candidate) >= minSpacingTiles * TILE_SIZE,

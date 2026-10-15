@@ -27,6 +27,21 @@ function isSolidAt(map: CollisionMap, tileX: number, tileY: number): boolean {
   return map.isSolidTile(tileX, tileY);
 }
 
+/**
+ * True if a player's hitbox, centered at this pixel position, fits without
+ * overlapping any solid tile. Exported so map generation/validation can
+ * place spawn and pickup points that are actually clear — the player's
+ * hitbox (48px tall) spans more than one tile, so checking only the single
+ * tile under the point isn't enough near a thin corridor's edge.
+ */
+export function isPositionClearForPlayer(
+  map: CollisionMap,
+  centerX: number,
+  centerY: number,
+): boolean {
+  return !aabbOverlapsSolid(map, centerX, centerY);
+}
+
 function aabbOverlapsSolid(map: CollisionMap, centerX: number, centerY: number): boolean {
   const left = centerX - PLAYER_HALF_WIDTH;
   const right = centerX + PLAYER_HALF_WIDTH;

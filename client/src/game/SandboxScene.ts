@@ -194,13 +194,6 @@ export class SandboxScene extends Phaser.Scene {
     }
 
     const alpha = this.accumulatorMs / STEP_MS;
-    this.playerView.render(
-      this.previousPlayerState,
-      this.playerState,
-      alpha,
-      this.latestInput.aimAngle,
-    );
-
     const followX = Phaser.Math.Linear(
       this.previousPlayerState.position.x,
       this.playerState.position.x,
@@ -211,6 +204,14 @@ export class SandboxScene extends Phaser.Scene {
       this.playerState.position.y,
       alpha,
     );
+    this.playerView.render(
+      followX,
+      followY,
+      this.playerState.facing,
+      this.playerState.crouching,
+      this.latestInput.aimAngle,
+    );
+
     const cameraSmoothing = 0.12;
     this.cameraX = Phaser.Math.Linear(this.cameraX, followX, cameraSmoothing);
     this.cameraY = Phaser.Math.Linear(this.cameraY, followY, cameraSmoothing);

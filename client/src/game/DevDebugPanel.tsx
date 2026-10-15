@@ -2,10 +2,17 @@ import { useState } from 'react';
 import { HOST_SETTING_RANGES } from '@game/shared';
 import { sandboxSettings } from './sandboxSettings';
 
-/** Dev-only: live gravity/boost sliders, to check both settings behave as the flow describes. */
+/**
+ * Dev-only panel: gravity/boost sliders (apply to the offline sandbox only —
+ * the networked match's physics settings are fixed until Phase 06 wires up
+ * real host settings), plus artificial lag/packet-loss for the networked
+ * match, to test bad mobile networks locally.
+ */
 export function DevDebugPanel() {
   const [gravity, setGravity] = useState(sandboxSettings.gravity);
   const [boost, setBoost] = useState(sandboxSettings.boost);
+  const [lagMs, setLagMs] = useState(sandboxSettings.artificialLagMs);
+  const [lossPercent, setLossPercent] = useState(sandboxSettings.packetLossPercent);
 
   return (
     <div
@@ -54,6 +61,41 @@ export function DevDebugPanel() {
             const value = Number(e.target.value);
             setBoost(value);
             sandboxSettings.boost = value;
+          }}
+          style={{ width: '100%' }}
+        />
+      </label>
+      <hr
+        style={{ width: '100%', border: 'none', borderTop: '1px solid #374151', margin: '2px 0' }}
+      />
+      <label>
+        Lag (match only): {lagMs}ms
+        <input
+          type="range"
+          min={0}
+          max={500}
+          step={10}
+          value={lagMs}
+          onChange={(e) => {
+            const value = Number(e.target.value);
+            setLagMs(value);
+            sandboxSettings.artificialLagMs = value;
+          }}
+          style={{ width: '100%' }}
+        />
+      </label>
+      <label>
+        Packet loss (match only): {lossPercent}%
+        <input
+          type="range"
+          min={0}
+          max={50}
+          step={1}
+          value={lossPercent}
+          onChange={(e) => {
+            const value = Number(e.target.value);
+            setLossPercent(value);
+            sandboxSettings.packetLossPercent = value;
           }}
           style={{ width: '100%' }}
         />

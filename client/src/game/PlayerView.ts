@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import type { PlayerState } from '@game/shared';
+import type { Facing } from '@game/shared';
 
 const WIDTH = 24;
 const HEIGHT = 48;
@@ -30,16 +30,19 @@ export class PlayerView {
       .setOrigin(0.5, 1);
   }
 
-  render(prev: PlayerState, curr: PlayerState, alpha: number, aimAngle: number) {
-    const x = Phaser.Math.Linear(prev.position.x, curr.position.x, alpha);
-    const y = Phaser.Math.Linear(prev.position.y, curr.position.y, alpha);
-    const displayHeight = curr.crouching ? HEIGHT * 0.6 : HEIGHT;
+  /**
+   * One resolved, ready-to-draw snapshot — no interpolation math here. The
+   * offline sandbox lerps its own prev/curr physics states before calling
+   * this; networked play reads an already-smoothed value from `Predict`.
+   */
+  render(x: number, y: number, facing: Facing, crouching: boolean, aimAngle: number) {
+    const displayHeight = crouching ? HEIGHT * 0.6 : HEIGHT;
 
     this.body.setPosition(x, y);
     this.body.setSize(WIDTH, displayHeight);
     this.nameTag.setPosition(x, y - HEIGHT / 2 - 6);
 
-    const dir = curr.facing === 'right' ? 1 : -1;
+    const dir = facing === 'right' ? 1 : -1;
     this.facingMarker.setPosition(x + dir * (WIDTH / 2 + 6), y);
     this.facingMarker.setScale(dir, 1);
 

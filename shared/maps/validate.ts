@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { CollisionMap } from '../src/physics/map.js';
+import { isPositionClearForPlayer } from '../src/physics/step.js';
 import { loadMap, type MapPoint, type TiledMapJson } from '../src/maps/loadMap.js';
 
 export const EXPECTED_SPAWN_COUNT = 16;
@@ -45,13 +46,20 @@ export function validateSpawnPickupSpacing(
   return errors;
 }
 
+/**
+ * Checks the player's full hitbox at each point, not just the tile under its
+ * center — the hitbox (48px tall) spans more than one tile, so a point whose
+ * own tile is open can still overlap a wall right above or below it (found
+ * for real: a spawn at the edge of a 4-tile-thick tunnel, overlapping the
+ * wall one tile away).
+ */
 export function validateNoPointInsideSolid(map: CollisionMap, points: MapPoint[]): string[] {
   const errors: string[] = [];
   for (const point of points) {
-    const tile = tileAt(map, point);
-    if (map.isSolidTile(tile.x, tile.y)) {
+    if (!isPositionClearForPlayer(map, point.x, point.y)) {
+      const tile = tileAt(map, point);
       errors.push(
-        `${point.id} at (${point.x}, ${point.y}) sits inside a solid tile (${tile.x}, ${tile.y})`,
+        `${point.id} at (${point.x}, ${point.y}) overlaps a solid tile near (${tile.x}, ${tile.y}) — the player hitbox doesn't fit`,
       );
     }
   }

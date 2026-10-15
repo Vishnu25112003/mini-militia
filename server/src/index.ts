@@ -5,6 +5,7 @@ import { Server } from 'colyseus';
 import { WebSocketTransport } from '@colyseus/ws-transport';
 import { GAME_NAME } from '@game/shared';
 import { HelloRoom } from './rooms/HelloRoom.js';
+import { MatchRoom } from './rooms/MatchRoom.js';
 import { loadCatacombsMap } from './map.js';
 
 const port = Number(process.env.PORT ?? 2567);
@@ -40,6 +41,7 @@ const gameServer = new Server({
 });
 
 gameServer.define('hello_room', HelloRoom);
+gameServer.define('match_room', MatchRoom);
 
 await gameServer.listen(port);
 console.log(`${GAME_NAME} server listening on port ${port}`);
