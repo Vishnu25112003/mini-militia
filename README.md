@@ -42,12 +42,12 @@ npm run dev
 - Server runs on `ws://localhost:2567` (health check at `http://localhost:2567/health`)
 - Client runs on `http://localhost:5173` (Vite's default port)
 
-Open the client URL in a browser — enter a name and hit **Join Test Room** (the real lobby is Phase 05; for now everyone lands in the same one `match_room`). The server is authoritative: it runs the real simulation, and the browser predicts your own movement instantly while smoothing everyone else's.
+Open the client URL in a browser — enter a name, then **Create Room** (you become host, get a 6-character room code) or **Join Room** with a code someone shared with you. The lobby shows the player list, ready status, and an auto-start countdown; press **START** (or wait out the 2-minute countdown) to begin. The server is authoritative throughout: it runs the real simulation, and the browser predicts your own movement instantly while smoothing everyone else's.
 
 - **PC:** A/D move, W or Space fly, S crouch, mouse aim, left click fire (no gun wired up yet), V/G/R/E log their press to the console (melee/grenade/reload/pickup — wired up in Phases 07-10), right click cycles zoom, **M** toggles spawn/pickup debug markers.
 - **Touch:** left joystick moves/flies/crouches, right joystick aims (holding = fire), buttons log their press the same as PC, top-left button cycles zoom.
 - A dev-only panel (top-right, only in `npm run dev`) lets you change gravity/boost for the **offline sandbox** (see below) live, and dial in artificial lag/packet-loss for the **networked match** to test bad mobile networks locally.
-- Open the client URL in two tabs (or two devices) to see multiplayer sync for real — the small text in the corner shows ping, tick rate, and your own prediction's drift from server truth.
+- Open the client URL in two tabs (or two devices), create a room in one and join its code from the other, to see multiplayer sync for real — the small text in the corner during the match shows ping, tick rate, and your own prediction's drift from server truth.
 
 ### Offline movement sandbox
 

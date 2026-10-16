@@ -1,14 +1,45 @@
-import { MATCH_RULES, WEAPONS, type PlayerState, type Vector2 } from '@game/shared';
+import {
+  MATCH_RULES,
+  WEAPONS,
+  type LoadoutSlotSelection,
+  type PlayerState,
+  type Slot,
+  type Vector2,
+} from '@game/shared';
+
+function loadoutSlotToSlot(selection: LoadoutSlotSelection): Slot {
+  if (selection.kind === 'single') {
+    const weapon = WEAPONS[selection.weapon];
+    return {
+      kind: 'single',
+      weapon: weapon.id,
+      ammoInMagazine: weapon.magazine,
+      ammoReserve: weapon.reserve ?? 0,
+    };
+  }
+
+  const [a, b] = selection.weapons;
+  const weaponA = WEAPONS[a];
+  const weaponB = WEAPONS[b];
+  return {
+    kind: 'dual',
+    weapons: [weaponA.id, weaponB.id],
+    ammoInMagazine: [weaponA.magazine, weaponB.magazine],
+    ammoReserve: [weaponA.reserve ?? 0, weaponB.reserve ?? 0],
+  };
+}
 
 /**
  * Server-authoritative starting state for a newly joined/spawned player.
- * Same placeholder loadout as the Phase 03 sandbox — real spawn rules
- * (random guns, host loadout settings) are Phase 06/10's job.
+ * `loadout` is the two spawn slots — either 2 random single guns, or the
+ * host's chosen Default Loadout (see `server/src/hostSettings.ts`).
  */
-export function createServerPlayer(spawn: Vector2, name: string, color: string): PlayerState {
-  const ak47 = WEAPONS.AK47;
-  const m14 = WEAPONS.M14;
-
+export function createServerPlayer(
+  spawn: Vector2,
+  name: string,
+  color: string,
+  loadout: readonly [LoadoutSlotSelection, LoadoutSlotSelection],
+): PlayerState {
   return {
     id: name,
     name,
@@ -20,20 +51,7 @@ export function createServerPlayer(spawn: Vector2, name: string, color: string):
     fuel: 100,
     crouching: false,
     onGround: false,
-    slots: [
-      {
-        kind: 'single',
-        weapon: ak47.id,
-        ammoInMagazine: ak47.magazine,
-        ammoReserve: ak47.reserve ?? 0,
-      },
-      {
-        kind: 'single',
-        weapon: m14.id,
-        ammoInMagazine: m14.magazine,
-        ammoReserve: m14.reserve ?? 0,
-      },
-    ],
+    slots: [loadoutSlotToSlot(loadout[0]), loadoutSlotToSlot(loadout[1])],
     activeSlotIndex: 0,
     grenades: {
       Fragnade: MATCH_RULES.spawnFragnades,

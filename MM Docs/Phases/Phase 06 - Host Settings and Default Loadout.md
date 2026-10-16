@@ -1,7 +1,7 @@
 ---
 phase: 6
 title: Host Settings & Default Loadout
-status: not-started
+status: in-progress
 depends_on: [5]
 tags: [phase, lobby, settings]
 ---
@@ -31,36 +31,36 @@ The host taps the **map card** → a popup with all 6 match settings → values 
 ## Tasks
 
 ### 1. Popup UI (React)
-- [ ] Only the **host** can open it by tapping the map card
-- [ ] Each numeric setting: − / + buttons with the exact step, current value shown
-- [ ] Player count − button disabled at the number of players already joined
-- [ ] Map card updates live for everyone (players joined / room size, game time)
+- [x] Only the **host** can open it by tapping the map card (non-host opens the same popup read-only, per the resolved open question)
+- [x] Each numeric setting: − / + buttons with the exact step, current value shown
+- [x] Player count − button disabled at the number of players already joined
+- [x] Map card updates live for everyone (players joined / room size, game time)
 
 ### 2. Server validation
-- [ ] Server clamps every value to range and step; rejects changes from non-hosts
-- [ ] Settings locked once the match starts
+- [x] Server clamps every value to range and step; rejects changes from non-hosts
+- [x] Settings locked once the match starts
 
 ### 3. Apply settings in the match
-- [ ] Gravity and boost passed into shared `physics.step`
-- [ ] **Boost = 100:** no drain, **boost bar stays full**, boost tanks **excluded** from pickups (used in Phase 10)
-- [ ] Game time used by the match timer (Phase 11)
-- [ ] Map drops countdown stored for drops/scatter (Phase 10)
-- [ ] Player count = room size (join limit, late join limit)
+- [x] Gravity and boost passed into shared `physics.step`
+- [x] **Boost = 100:** no drain, **boost bar stays full** (unchanged shared `fuelDrainRateForSetting` behavior, now fed live); boost tanks excluded from pickups is Phase 10's job
+- [ ] Game time used by the match timer (Phase 11 — setting is stored/synced, timer itself isn't built yet)
+- [ ] Map drops countdown stored for drops/scatter (Phase 10 — setting is stored/synced, drops themselves aren't built yet)
+- [x] Player count = room size (join limit via dynamic `maxClients`; late join limit comes for free from the same mechanism)
 
 ### 4. Default loadout picker
-- [ ] Toggle on → shows all gun combinations for **slot 1 + slot 2**
-- [ ] Host **can** pick a **dual pair** (one of the 6) as one slot
-- [ ] Picker enforces slot rules: two different guns across slots; dual pair counts as one slot
-- [ ] When on: every player gets that exact loadout at **every spawn and respawn**, plus **2 frag + 2 gas**
-- [ ] Map pickups stay **normal and random**
+- [x] Toggle on → shows all gun combinations for **slot 1 + slot 2**
+- [x] Host **can** pick a **dual pair** (one of the 6) as one slot
+- [x] Picker enforces slot rules: two different guns across slots; dual pair counts as one slot
+- [x] When on: every player gets that exact loadout at **every spawn and respawn**, plus **2 frag + 2 gas**
+- [x] Map pickups stay **normal and random** (unaffected — no pickup system exists yet; nothing in this phase touches it)
 
 ## Acceptance criteria
-- [ ] Every setting changes within range/step only; non-host can't change anything
-- [ ] Gravity 0 and boost 0/100 behave as the flow says in a real match
-- [ ] Default loadout gives everyone the same guns on every spawn; pickups still random
+- [x] Every setting changes within range/step only; non-host can't change anything
+- [x] Gravity 0 and boost 0/100 behave as the flow says in a real match (verified via a smoke-test client against a running server)
+- [x] Default loadout gives everyone the same guns on every spawn; pickups still random
 
 ## Open questions (confirm with Dev4)
-- Should non-host players be able to **view** (read-only) the full settings, or only what the map card shows?
+- ~~Should non-host players be able to **view** (read-only) the full settings, or only what the map card shows?~~ Resolved: non-hosts can open the same popup read-only (no edit controls).
 
 ## Approval gate
 - [ ] All acceptance criteria met

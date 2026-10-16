@@ -1,6 +1,5 @@
 import Phaser from 'phaser';
 import {
-  Client,
   getStateCallbacks,
   Predict,
   type InputHandle,
@@ -15,9 +14,7 @@ import { InputController } from './input/InputController';
 import { PlayerView } from './PlayerView';
 import { createPredictStep } from './net/predictStep';
 import type { PlayerInputWire, PlayerWireState } from './net/wireTypes';
-import { installSimulatedNetworkConditions } from './net/simulatedNetwork';
 
-const SERVER_URL = import.meta.env.VITE_SERVER_URL ?? 'ws://localhost:2567';
 const INTERP_DELAY_MS = 100;
 const ZOOM_LEVELS = [1, 1.6, 2.4];
 const PHYSICS_SETTINGS = {
@@ -26,7 +23,8 @@ const PHYSICS_SETTINGS = {
 };
 
 export interface MatchSceneData {
-  name: string;
+  /** Already connected — the lobby (Phase 05) establishes this before the match starts. */
+  room: Room;
 }
 
 /**
@@ -37,10 +35,8 @@ export interface MatchSceneData {
  * rollback framework rather than hand-rolled.
  */
 export class MatchScene extends Phaser.Scene {
-  private playerName = 'Player';
-
-  // Both default their generics to `any` internally — written bare rather
-  // than `Room<any, any>` to satisfy the no-explicit-any lint rule without
+  // Defaults its generic to `any` internally — written bare rather than
+  // `Predict<any>` to satisfy the no-explicit-any lint rule without
   // reaching across the client/server package boundary for exact types.
   private room!: Room;
   private predict!: Predict;
@@ -67,7 +63,7 @@ export class MatchScene extends Phaser.Scene {
   }
 
   init(data: MatchSceneData) {
-    this.playerName = data.name;
+    this.room = data.room;
   }
 
   preload() {
@@ -102,19 +98,10 @@ export class MatchScene extends Phaser.Scene {
     // `shutdown` is an event, not an auto-invoked lifecycle method.
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.handleShutdown, this);
 
-    void this.connect();
+    this.setUpNetworking();
   }
 
-  private async connect() {
-    installSimulatedNetworkConditions();
-    try {
-      const client = new Client(SERVER_URL);
-      this.room = await client.joinOrCreate('match_room', { name: this.playerName });
-    } catch (err) {
-      this.statusText?.setText(`connection failed: ${(err as Error).message}`);
-      return;
-    }
-
+  private setUpNetworking() {
     const $ = getStateCallbacks(this.room);
     $(this.room.state).players.onAdd((player: PlayerWireState, sessionId: string) => {
       this.playerViews.set(sessionId, new PlayerView(this, player.color, player.name));
@@ -145,8 +132,9 @@ export class MatchScene extends Phaser.Scene {
       return { x: this.predict.value(me, 'x'), y: this.predict.value(me, 'y') };
     });
 
+    const myName = this.room.state.players.get(this.room.sessionId)?.name ?? '?';
     this.statusText?.setText(
-      `${GAME_NAME}: connected as ${this.playerName} (${this.room.sessionId.slice(0, 6)})`,
+      `${GAME_NAME}: playing as ${myName} (${this.room.sessionId.slice(0, 6)})`,
     );
   }
 

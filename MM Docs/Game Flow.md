@@ -72,6 +72,13 @@
 | In the lobby, before the match starts | The whole room is **cancelled** |
 | After the match starts | The match **continues** for all other players — not affected |
 
+### Host removal
+- A player **removed by the host from the lobby** can **re-join immediately** with the room code — removal isn't a ban, just a one-time kick. The host can remove them again if needed.
+- Once the match has started, a previously-removed player joining with the code is treated as a fresh late joiner (Section 5): 0/0/0 scores.
+
+### Lobby chat
+- Messages are limited to **100 characters**.
+
 ---
 
 ## 3. Spawning

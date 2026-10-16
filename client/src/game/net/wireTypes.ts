@@ -36,4 +36,34 @@ export interface PlayerWireState {
   fuel: number;
   color: string;
   name: string;
+  /** Lobby-only: has this player pressed Start? Unused once the match is playing. */
+  ready: boolean;
+}
+
+/** Mirrors `server/src/schema/HostSettingsSchema.ts`'s `LoadoutSlotSchema`. */
+export interface LoadoutSlotWire {
+  kind: 'single' | 'dual';
+  weapon1: string;
+  weapon2: string;
+}
+
+/** Mirrors `server/src/schema/HostSettingsSchema.ts`. */
+export interface HostSettingsWire {
+  playerCount: number;
+  gameTimeSeconds: number;
+  mapDropsCountdownSeconds: number;
+  gravity: number;
+  boost: number;
+  defaultLoadoutEnabled: boolean;
+  defaultLoadoutSlot1: LoadoutSlotWire;
+  defaultLoadoutSlot2: LoadoutSlotWire;
+}
+
+/** Mirrors `server/src/schema/MatchRoomState.ts`. */
+export interface MatchRoomWireState {
+  phase: 'lobby' | 'playing' | 'ended';
+  roomCode: string;
+  hostSessionId: string;
+  autoStartRemainingSeconds: number;
+  settings: HostSettingsWire;
 }
