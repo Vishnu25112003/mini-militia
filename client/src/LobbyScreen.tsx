@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { Room } from '@colyseus/sdk';
-import { HOST_SETTING_RANGES } from '@game/shared';
 import { useRoomState } from './useRoomState';
+import { HostSettingsPopup } from './HostSettingsPopup';
 import type { MatchRoomWireState, PlayerWireState } from './game/net/wireTypes';
 
 interface ChatMessage {
@@ -33,6 +33,7 @@ export function LobbyScreen({
   const [copied, setCopied] = useState(false);
   const [showChat, setShowChat] = useState(false);
   const [showGear, setShowGear] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
 
@@ -211,17 +212,24 @@ export function LobbyScreen({
         </button>
 
         <div
+          role="button"
+          tabIndex={0}
+          onClick={() => setShowSettings(true)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') setShowSettings(true);
+          }}
           style={{
             padding: '10px',
             borderRadius: '4px',
             background: 'rgba(255,255,255,0.05)',
             fontSize: '12px',
+            cursor: 'pointer',
           }}
         >
           <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>Catacombs</div>
           <div>
-            {state.players.size} / 8 players ·{' '}
-            {formatMmSs(HOST_SETTING_RANGES.gameTimeSeconds.default)}
+            {state.players.size} / {state.settings.playerCount} players ·{' '}
+            {formatMmSs(state.settings.gameTimeSeconds)}
           </div>
         </div>
 
@@ -288,6 +296,17 @@ export function LobbyScreen({
             Control customization is coming in a later phase. For now, see the README for the
             default keyboard/touch layout.
           </p>
+        </Popup>
+      )}
+
+      {showSettings && (
+        <Popup onClose={() => setShowSettings(false)} title="Match settings">
+          <HostSettingsPopup
+            room={room}
+            settings={state.settings}
+            isHost={isHost}
+            playersJoined={state.players.size}
+          />
         </Popup>
       )}
     </div>

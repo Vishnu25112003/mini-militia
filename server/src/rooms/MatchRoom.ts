@@ -14,16 +14,13 @@ import { PlayerInputSchema } from '../schema/PlayerInputSchema.js';
 import { createServerPlayer } from '../createServerPlayer.js';
 import { loadCatacombsMap } from '../map.js';
 import { generateUniqueRoomCode } from '../roomCode.js';
+import { applyHostSettingsUpdate, spawnLoadoutFor, type HostSettingsUpdate } from '../hostSettings.js';
 
 export const MATCH_ROOM_NAME = 'match_room';
 
 const TICK_RATE = 30;
 const PATCH_RATE_MS = 50; // 20 Hz, per the flow's fixed decisions
 const REWIND_WINDOW_MS = 1000;
-const PHYSICS_SETTINGS = {
-  gravity: HOST_SETTING_RANGES.gravity.default,
-  boost: HOST_SETTING_RANGES.boost.default,
-};
 const CHAT_MAX_LENGTH = 100;
 
 /** Custom WebSocket close codes clients can branch on in `room.onLeave((code, reason) => ...)`. */
@@ -70,7 +67,7 @@ export class MatchRoom extends Room<{
   state: InstanceType<typeof MatchRoomState>;
   input: InstanceType<typeof PlayerInputSchema>;
 }> {
-  maxClients = 8;
+  maxClients = HOST_SETTING_RANGES.playerCount.default;
 
   private catacombs = loadCatacombsMap();
   private players = new Map<string, PlayerState>();
@@ -101,6 +98,9 @@ export class MatchRoom extends Room<{
     );
     this.onMessage('removePlayer', (client, payload: { sessionId?: string }) =>
       this.handleRemovePlayer(client, payload),
+    );
+    this.onMessage('updateHostSettings', (client, payload: HostSettingsUpdate) =>
+      this.handleUpdateHostSettings(client, payload),
     );
 
     this.startAutoStartTimer();
@@ -160,7 +160,7 @@ export class MatchRoom extends Room<{
     const usedColors = new Set([...this.state.players.values()].map((p) => p.color));
     const color = PLAYER_COLORS.find((c) => !usedColors.has(c)) ?? PLAYER_COLORS[0]!;
 
-    const playerState = createServerPlayer(spawn, name, color);
+    const playerState = createServerPlayer(spawn, name, color, spawnLoadoutFor(this.state.settings));
     this.players.set(client.sessionId, playerState);
 
     const schemaPlayer = new PlayerSchema();
@@ -200,6 +200,14 @@ export class MatchRoom extends Room<{
     target?.leave(LEAVE_CODE.REMOVED_BY_HOST, 'removed_by_host');
   }
 
+  private handleUpdateHostSettings(client: Client, payload: HostSettingsUpdate) {
+    if (client.sessionId !== this.state.hostSessionId) return; // host-only
+    if (this.state.phase !== 'lobby') return; // locked once the match starts
+
+    applyHostSettingsUpdate(this.state.settings, payload, this.state.players.size);
+    this.maxClients = this.state.settings.playerCount;
+  }
+
   private startMatch() {
     this.autoStartTimeout?.clear();
     this.autoStartCountdownInterval?.clear();
@@ -209,7 +217,12 @@ export class MatchRoom extends Room<{
     for (const [sessionId, schemaPlayer] of this.state.players) {
       const spawn =
         this.catacombs.spawnPoints[Math.floor(Math.random() * this.catacombs.spawnPoints.length)]!;
-      const playerState = createServerPlayer(spawn, schemaPlayer.name, schemaPlayer.color);
+      const playerState = createServerPlayer(
+        spawn,
+        schemaPlayer.name,
+        schemaPlayer.color,
+        spawnLoadoutFor(this.state.settings),
+      );
       this.players.set(sessionId, playerState);
       syncSchemaFromState(schemaPlayer, playerState, 0);
     }
@@ -241,13 +254,15 @@ export class MatchRoom extends Room<{
   }
 
   private fixedTick(ctx: StepContext) {
+    const physicsSettings = { gravity: this.state.settings.gravity, boost: this.state.settings.boost };
+
     for (const [sessionId, playerState] of this.players) {
       let latest = playerState;
       let latestAimAngle = this.state.players.get(sessionId)?.aimAngle ?? 0;
 
       for (const wireInput of this.inputs.get(sessionId)) {
         const input = toPlayerInput(wireInput, ctx.tick);
-        latest = step(latest, input, this.catacombs.collisionMap, PHYSICS_SETTINGS);
+        latest = step(latest, input, this.catacombs.collisionMap, physicsSettings);
         latestAimAngle = input.aimAngle;
       }
 

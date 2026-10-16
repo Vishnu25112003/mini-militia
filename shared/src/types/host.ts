@@ -1,5 +1,10 @@
 import type { WeaponId } from '../config/weapons.js';
 
+/** One of the default loadout's two slots — a single gun, or a dual pair (see config/dualPairs.ts). */
+export type LoadoutSlotSelection =
+  | { kind: 'single'; weapon: WeaponId }
+  | { kind: 'dual'; weapons: readonly [WeaponId, WeaponId] };
+
 export interface HostSettings {
   playerCount: number;
   gameTimeSeconds: number;
@@ -10,5 +15,5 @@ export interface HostSettings {
   boost: number;
   defaultLoadoutEnabled: boolean;
   /** Required when defaultLoadoutEnabled is true. */
-  defaultLoadout?: readonly [WeaponId, WeaponId];
+  defaultLoadout?: readonly [LoadoutSlotSelection, LoadoutSlotSelection];
 }
