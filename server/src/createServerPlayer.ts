@@ -15,6 +15,8 @@ function loadoutSlotToSlot(selection: LoadoutSlotSelection): Slot {
       weapon: weapon.id,
       ammoInMagazine: weapon.magazine,
       ammoReserve: weapon.reserve ?? 0,
+      cooldownRemainingSeconds: 0,
+      reloadRemainingSeconds: 0,
     };
   }
 
@@ -26,6 +28,8 @@ function loadoutSlotToSlot(selection: LoadoutSlotSelection): Slot {
     weapons: [weaponA.id, weaponB.id],
     ammoInMagazine: [weaponA.magazine, weaponB.magazine],
     ammoReserve: [weaponA.reserve ?? 0, weaponB.reserve ?? 0],
+    cooldownRemainingSeconds: 0,
+    reloadRemainingSeconds: 0,
   };
 }
 
@@ -40,6 +44,34 @@ export function createServerPlayer(
   color: string,
   loadout: readonly [LoadoutSlotSelection, LoadoutSlotSelection],
 ): PlayerState {
+  return {
+    ...baseSpawnState(spawn, name, color, loadout),
+    kills: 0,
+    deaths: 0,
+    points: 0,
+  };
+}
+
+/** Same fresh spawn state as `createServerPlayer`, but keeps the player's running kills/deaths/points across a respawn. */
+export function respawnServerPlayer(
+  previous: PlayerState,
+  spawn: Vector2,
+  loadout: readonly [LoadoutSlotSelection, LoadoutSlotSelection],
+): PlayerState {
+  return {
+    ...baseSpawnState(spawn, previous.name, previous.color, loadout),
+    kills: previous.kills,
+    deaths: previous.deaths,
+    points: previous.points,
+  };
+}
+
+function baseSpawnState(
+  spawn: Vector2,
+  name: string,
+  color: string,
+  loadout: readonly [LoadoutSlotSelection, LoadoutSlotSelection],
+): Omit<PlayerState, 'kills' | 'deaths' | 'points'> {
   return {
     id: name,
     name,
@@ -58,9 +90,6 @@ export function createServerPlayer(
       Gasnade: MATCH_RULES.spawnGasnades,
       Proxynade: 0,
     },
-    kills: 0,
-    deaths: 0,
-    points: 0,
     gotKillThisLife: false,
     shieldSecondsRemaining: MATCH_RULES.spawnShieldSeconds,
     alive: true,

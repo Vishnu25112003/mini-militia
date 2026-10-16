@@ -32,6 +32,10 @@ export type SingleSlot = {
   weapon: WeaponId;
   ammoInMagazine: number;
   ammoReserve: number;
+  /** Seconds left before this slot's gun can fire again; 0 = ready. */
+  cooldownRemainingSeconds: number;
+  /** Seconds left in an in-progress reload; 0 = not reloading. */
+  reloadRemainingSeconds: number;
 };
 
 export type DualSlot = {
@@ -39,6 +43,9 @@ export type DualSlot = {
   weapons: readonly [WeaponId, WeaponId];
   ammoInMagazine: readonly [number, number];
   ammoReserve: readonly [number, number];
+  /** Both guns of a dual pair fire together, so they share one cooldown/reload clock. */
+  cooldownRemainingSeconds: number;
+  reloadRemainingSeconds: number;
 };
 
 export type Slot = SingleSlot | DualSlot;

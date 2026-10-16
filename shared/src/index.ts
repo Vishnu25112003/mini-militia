@@ -18,6 +18,7 @@ export * from './types/match.js';
 // Physics
 export * from './physics/map.js';
 export * from './physics/step.js';
+export * from './physics/raycast.js';
 
 // Maps
 export * from './maps/tileset.js';
@@ -29,3 +30,4 @@ export * from './logic/melee.js';
 export * from './logic/scoring.js';
 export * from './logic/slots.js';
 export * from './logic/validation.js';
+export * from './logic/combat.js';

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { canPair, isValidDefaultLoadout, isValidLoadout } from './slots.js';
 import type { Slot } from '../types/player.js';
 import type { LoadoutSlotSelection } from '../types/host.js';
+import type { WeaponId } from '../config/weapons.js';
 
 describe('canPair', () => {
   it('allows exactly the 6 published pairs', () => {
@@ -22,38 +23,47 @@ describe('canPair', () => {
   });
 });
 
+function singleSlot(weapon: WeaponId, ammoInMagazine: number, ammoReserve: number): Slot {
+  return { kind: 'single', weapon, ammoInMagazine, ammoReserve, cooldownRemainingSeconds: 0, reloadRemainingSeconds: 0 };
+}
+
+function dualSlot(
+  weapons: readonly [WeaponId, WeaponId],
+  ammoInMagazine: readonly [number, number],
+  ammoReserve: readonly [number, number],
+): Slot {
+  return {
+    kind: 'dual',
+    weapons,
+    ammoInMagazine,
+    ammoReserve,
+    cooldownRemainingSeconds: 0,
+    reloadRemainingSeconds: 0,
+  };
+}
+
 describe('isValidLoadout', () => {
   it('rejects the same single gun in both slots', () => {
-    const slot1: Slot = { kind: 'single', weapon: 'AK47', ammoInMagazine: 30, ammoReserve: 90 };
-    const slot2: Slot = { kind: 'single', weapon: 'AK47', ammoInMagazine: 30, ammoReserve: 90 };
+    const slot1 = singleSlot('AK47', 30, 90);
+    const slot2 = singleSlot('AK47', 30, 90);
     expect(isValidLoadout(slot1, slot2)).toBe(false);
   });
 
   it('allows two different single guns', () => {
-    const slot1: Slot = { kind: 'single', weapon: 'AK47', ammoInMagazine: 30, ammoReserve: 90 };
-    const slot2: Slot = { kind: 'single', weapon: 'M14', ammoInMagazine: 15, ammoReserve: 45 };
+    const slot1 = singleSlot('AK47', 30, 90);
+    const slot2 = singleSlot('M14', 15, 45);
     expect(isValidLoadout(slot1, slot2)).toBe(true);
   });
 
   it('allows a dual pair alongside an unrelated single gun', () => {
-    const dual: Slot = {
-      kind: 'dual',
-      weapons: ['Uzi', 'Uzi'],
-      ammoInMagazine: [30, 30],
-      ammoReserve: [90, 90],
-    };
-    const single: Slot = { kind: 'single', weapon: 'M14', ammoInMagazine: 15, ammoReserve: 45 };
+    const dual = dualSlot(['Uzi', 'Uzi'], [30, 30], [90, 90]);
+    const single = singleSlot('M14', 15, 45);
     expect(isValidLoadout(dual, single)).toBe(true);
   });
 
   it('rejects a dual pair sharing a gun with the other slot', () => {
-    const dual: Slot = {
-      kind: 'dual',
-      weapons: ['TEC9', 'Uzi'],
-      ammoInMagazine: [20, 30],
-      ammoReserve: [80, 90],
-    };
-    const single: Slot = { kind: 'single', weapon: 'Uzi', ammoInMagazine: 30, ammoReserve: 90 };
+    const dual = dualSlot(['TEC9', 'Uzi'], [20, 30], [80, 90]);
+    const single = singleSlot('Uzi', 30, 90);
     expect(isValidLoadout(dual, single)).toBe(false);
   });
 });

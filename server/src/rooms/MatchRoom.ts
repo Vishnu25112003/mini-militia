@@ -3,15 +3,29 @@ import {
   HOST_SETTING_RANGES,
   MATCH_RULES,
   PLAYER_COLORS,
+  applyDamage,
+  canFireActiveSlot,
+  damageParamsForShot,
+  fireActiveSlot,
+  pointsOnDeath,
+  pointsOnKill,
+  resolveHitscanShot,
+  startReloadActiveSlot,
   step,
+  swapActiveSlot,
+  tickCombatTimers,
   validateName,
+  type HitscanTarget,
   type PlayerInput,
   type PlayerState,
+  type Slot,
+  type WeaponStats,
 } from '@game/shared';
 import { MatchRoomState } from '../schema/MatchRoomState.js';
 import { PlayerSchema } from '../schema/PlayerSchema.js';
 import { PlayerInputSchema } from '../schema/PlayerInputSchema.js';
-import { createServerPlayer } from '../createServerPlayer.js';
+import { SlotSchema } from '../schema/SlotSchema.js';
+import { createServerPlayer, respawnServerPlayer } from '../createServerPlayer.js';
 import { loadCatacombsMap } from '../map.js';
 import { generateUniqueRoomCode } from '../roomCode.js';
 import { applyHostSettingsUpdate, spawnLoadoutFor, type HostSettingsUpdate } from '../hostSettings.js';
@@ -19,6 +33,7 @@ import { applyHostSettingsUpdate, spawnLoadoutFor, type HostSettingsUpdate } fro
 export const MATCH_ROOM_NAME = 'match_room';
 
 const TICK_RATE = 30;
+const DT_SECONDS = 1 / TICK_RATE;
 const PATCH_RATE_MS = 50; // 20 Hz, per the flow's fixed decisions
 const REWIND_WINDOW_MS = 1000;
 const CHAT_MAX_LENGTH = 100;
@@ -47,6 +62,28 @@ function toPlayerInput(wire: InstanceType<typeof PlayerInputSchema>, tick: numbe
   };
 }
 
+function syncSlotSchema(target: InstanceType<typeof SlotSchema>, slot: Slot) {
+  target.kind = slot.kind;
+  target.cooldownRemainingSeconds = slot.cooldownRemainingSeconds;
+  target.reloadRemainingSeconds = slot.reloadRemainingSeconds;
+
+  if (slot.kind === 'single') {
+    target.weapon1 = slot.weapon;
+    target.weapon2 = '';
+    target.ammoInMagazine1 = slot.ammoInMagazine;
+    target.ammoInMagazine2 = 0;
+    target.ammoReserve1 = slot.ammoReserve;
+    target.ammoReserve2 = 0;
+  } else {
+    target.weapon1 = slot.weapons[0];
+    target.weapon2 = slot.weapons[1];
+    target.ammoInMagazine1 = slot.ammoInMagazine[0];
+    target.ammoInMagazine2 = slot.ammoInMagazine[1];
+    target.ammoReserve1 = slot.ammoReserve[0];
+    target.ammoReserve2 = slot.ammoReserve[1];
+  }
+}
+
 function syncSchemaFromState(
   target: InstanceType<typeof PlayerSchema>,
   source: PlayerState,
@@ -61,6 +98,16 @@ function syncSchemaFromState(
   target.crouching = source.crouching;
   target.onGround = source.onGround;
   target.fuel = source.fuel;
+
+  target.health = source.health;
+  target.alive = source.alive;
+  target.shieldSecondsRemaining = source.shieldSecondsRemaining;
+  target.activeSlotIndex = source.activeSlotIndex;
+  syncSlotSchema(target.slot1, source.slots[0]);
+  syncSlotSchema(target.slot2, source.slots[1]);
+  target.kills = source.kills;
+  target.deaths = source.deaths;
+  target.points = source.points;
 }
 
 export class MatchRoom extends Room<{
@@ -74,6 +121,9 @@ export class MatchRoom extends Room<{
   private rewind!: Rewind;
   private autoStartTimeout?: Delayed;
   private autoStartCountdownInterval?: Delayed;
+  private respawnTimers = new Map<string, Delayed>();
+  /** Edge-detects `swapSlot` so holding the button doesn't toggle every tick. */
+  private prevSwapHeld = new Map<string, boolean>();
 
   inputs = this.defineInput(PlayerInputSchema, {
     sanitize: { moveX: [-1, 1] },
@@ -196,7 +246,7 @@ export class MatchRoom extends Room<{
     if (!targetId || targetId === this.state.hostSessionId) return; // can't remove self/host
 
     const target = this.clients.getById(targetId);
-    this.state.players.delete(targetId);
+    this.forgetPlayer(targetId);
     target?.leave(LEAVE_CODE.REMOVED_BY_HOST, 'removed_by_host');
   }
 
@@ -236,40 +286,174 @@ export class MatchRoom extends Room<{
       return;
     }
 
-    this.players.delete(client.sessionId);
-    this.state.players.delete(client.sessionId);
+    this.forgetPlayer(client.sessionId);
   }
 
   /** Host left (or disconnected) while still in the lobby — the whole room is cancelled, per the flow. */
   private cancelRoom() {
-    this.state.players.delete(this.state.hostSessionId);
+    this.forgetPlayer(this.state.hostSessionId);
     for (const client of [...this.clients]) {
       client.leave(LEAVE_CODE.ROOM_CANCELLED, 'room_cancelled');
     }
   }
 
+  private forgetPlayer(sessionId: string) {
+    this.players.delete(sessionId);
+    this.state.players.delete(sessionId);
+    this.respawnTimers.get(sessionId)?.clear();
+    this.respawnTimers.delete(sessionId);
+    this.prevSwapHeld.delete(sessionId);
+  }
+
   onDispose() {
     this.autoStartTimeout?.clear();
     this.autoStartCountdownInterval?.clear();
+    for (const timer of this.respawnTimers.values()) timer.clear();
   }
 
   private fixedTick(ctx: StepContext) {
     const physicsSettings = { gravity: this.state.settings.gravity, boost: this.state.settings.boost };
 
     for (const [sessionId, playerState] of this.players) {
+      if (!playerState.alive) continue; // waiting out the respawn timer, which will replace this entry
+
       let latest = playerState;
       let latestAimAngle = this.state.players.get(sessionId)?.aimAngle ?? 0;
 
       for (const wireInput of this.inputs.get(sessionId)) {
         const input = toPlayerInput(wireInput, ctx.tick);
         latest = step(latest, input, this.catacombs.collisionMap, physicsSettings);
+        latest = tickCombatTimers(latest, DT_SECONDS);
         latestAimAngle = input.aimAngle;
+
+        if (input.reload) latest = startReloadActiveSlot(latest);
+
+        const swapEdge = input.swapSlot && !this.prevSwapHeld.get(sessionId);
+        if (swapEdge) latest = swapActiveSlot(latest);
+        this.prevSwapHeld.set(sessionId, input.swapSlot);
+
+        if (input.fire && canFireActiveSlot(latest)) {
+          const fired = fireActiveSlot(latest);
+          latest = fired.state;
+          this.broadcast('shotFired', {
+            shooterId: sessionId,
+            x: latest.position.x,
+            y: latest.position.y,
+            angle: input.aimAngle,
+          });
+          // May return the shooter's own state updated with kill credit — fold it into
+          // `latest` so the end-of-iteration `this.players.set(sessionId, latest)` below
+          // doesn't clobber it with the pre-kill value.
+          const shooterAfterResolve = this.resolveShot(sessionId, latest, input.aimAngle, fired.weaponsFired);
+          if (shooterAfterResolve) latest = shooterAfterResolve;
+        }
+
+        if (!latest.alive) break; // this tick's own shot (or another's) just killed them
       }
 
       this.players.set(sessionId, latest);
 
       const schemaPlayer = this.state.players.get(sessionId);
       if (schemaPlayer) syncSchemaFromState(schemaPlayer, latest, latestAimAngle);
+
+      if (!latest.alive) this.scheduleRespawn(sessionId);
     }
+  }
+
+  /**
+   * Hitscan fire resolution: lag-compensated against where the shooter last
+   * saw everyone else. Returns the shooter's own state ONLY when this shot
+   * just killed someone (kill credit updates the shooter's state too) — the
+   * caller (mid-iteration in `fixedTick`) must fold that into its `latest`
+   * local, since a direct write to `this.players` here would otherwise be
+   * overwritten by that iteration's own end-of-loop write.
+   */
+  private resolveShot(
+    shooterSessionId: string,
+    shooterState: PlayerState,
+    aimAngle: number,
+    weaponsFired: readonly WeaponStats[],
+  ): PlayerState | undefined {
+    const seen = this.rewind.lastSeenBy(shooterSessionId);
+    const targets: HitscanTarget[] = [];
+
+    for (const [otherSessionId, otherState] of this.players) {
+      if (otherSessionId === shooterSessionId || !otherState.alive) continue;
+      const schemaPlayer = this.state.players.get(otherSessionId);
+      if (!schemaPlayer) continue;
+      const rewound = seen.read(schemaPlayer, ['x', 'y']);
+      targets.push({ id: otherSessionId, x: rewound.x, y: rewound.y, facing: otherState.facing });
+    }
+
+    const result = resolveHitscanShot(
+      this.catacombs.collisionMap,
+      shooterState.position.x,
+      shooterState.position.y,
+      aimAngle,
+      targets,
+    );
+    if (!result) return undefined;
+
+    const targetState = this.players.get(result.targetId);
+    if (!targetState || targetState.shieldSecondsRemaining > 0) return undefined; // spawn shield absorbs it
+
+    const damaged = applyDamage(targetState, damageParamsForShot(weaponsFired, result.hitDirection));
+    this.players.set(result.targetId, damaged);
+    const targetSchema = this.state.players.get(result.targetId);
+    if (targetSchema) syncSchemaFromState(targetSchema, damaged, targetSchema.aimAngle);
+
+    this.broadcast('hit', { shooterId: shooterSessionId, targetId: result.targetId });
+    if (!damaged.alive) return this.handleKill(shooterSessionId, shooterState, result.targetId, damaged);
+    return undefined;
+  }
+
+  private handleKill(
+    shooterSessionId: string,
+    shooterState: PlayerState,
+    victimSessionId: string,
+    victimState: PlayerState,
+  ): PlayerState {
+    const updatedShooter: PlayerState = {
+      ...shooterState,
+      kills: shooterState.kills + 1,
+      points: shooterState.points + pointsOnKill(),
+      gotKillThisLife: true,
+    };
+    this.players.set(shooterSessionId, updatedShooter);
+    const shooterSchema = this.state.players.get(shooterSessionId);
+    if (shooterSchema) syncSchemaFromState(shooterSchema, updatedShooter, shooterSchema.aimAngle);
+
+    const updatedVictim: PlayerState = {
+      ...victimState,
+      deaths: victimState.deaths + 1,
+      points: victimState.points + pointsOnDeath(victimState.gotKillThisLife),
+    };
+    this.players.set(victimSessionId, updatedVictim);
+    const victimSchema = this.state.players.get(victimSessionId);
+    if (victimSchema) syncSchemaFromState(victimSchema, updatedVictim, victimSchema.aimAngle);
+
+    this.scheduleRespawn(victimSessionId);
+    return updatedShooter;
+  }
+
+  private scheduleRespawn(sessionId: string) {
+    if (this.respawnTimers.has(sessionId)) return; // already waiting out this death
+    const timer = this.clock.setTimeout(() => {
+      this.respawnTimers.delete(sessionId);
+      this.respawnPlayer(sessionId);
+    }, MATCH_RULES.respawnWaitSeconds * 1000);
+    this.respawnTimers.set(sessionId, timer);
+  }
+
+  private respawnPlayer(sessionId: string) {
+    const previous = this.players.get(sessionId);
+    const schemaPlayer = this.state.players.get(sessionId);
+    if (!previous || !schemaPlayer) return; // left mid-wait
+
+    const spawn =
+      this.catacombs.spawnPoints[Math.floor(Math.random() * this.catacombs.spawnPoints.length)]!;
+    const respawned = respawnServerPlayer(previous, spawn, spawnLoadoutFor(this.state.settings));
+    this.players.set(sessionId, respawned);
+    syncSchemaFromState(schemaPlayer, respawned, 0);
   }
 }

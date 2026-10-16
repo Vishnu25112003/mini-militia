@@ -1,9 +1,11 @@
 import { schema, t } from '@colyseus/schema';
+import { SlotSchema } from './SlotSchema.js';
 
 /**
- * Broadcast state for one player — flat (required for `predict.reconciler`'s
- * rollback, which mirrors scalar schema fields). Movement-only for now;
- * combat/inventory fields arrive in later phases.
+ * Broadcast state for one player — the movement fields are flat (required
+ * for `predict.reconciler`'s rollback, which mirrors scalar schema fields).
+ * Combat/inventory fields (Phase 07) are synced for HUD/rendering but never
+ * predicted client-side — the server is the sole authority on combat.
  */
 export const PlayerSchema = schema(
   {
@@ -21,6 +23,17 @@ export const PlayerSchema = schema(
     name: t.string().default('Player'),
     /** Lobby-only: has this player pressed Start? Unused once the match is playing. */
     ready: t.boolean().default(false),
+
+    health: t.number().default(100),
+    alive: t.boolean().default(true),
+    /** Seconds of spawn shield remaining; 0 once it's expired. */
+    shieldSecondsRemaining: t.number().default(0),
+    activeSlotIndex: t.number().default(0),
+    slot1: SlotSchema,
+    slot2: SlotSchema,
+    kills: t.number().default(0),
+    deaths: t.number().default(0),
+    points: t.number().default(0),
   },
   'PlayerSchema',
 );

@@ -6,21 +6,20 @@ import {
   type Reconciler,
   type Room,
 } from '@colyseus/sdk';
-import { GAME_NAME, HOST_SETTING_RANGES, loadMap, type TiledMapJson } from '@game/shared';
+import { GAME_NAME, loadMap, type TiledMapJson } from '@game/shared';
 import catacombsMap from '@game/shared/maps/catacombs.json';
 import tilesetUrl from '@game/shared/maps/tileset.png';
 import { IS_TOUCH_DEVICE } from '../isTouchDevice';
 import { InputController } from './input/InputController';
 import { PlayerView } from './PlayerView';
 import { createPredictStep } from './net/predictStep';
-import type { PlayerInputWire, PlayerWireState } from './net/wireTypes';
+import type { MatchRoomWireState, PlayerInputWire, PlayerWireState } from './net/wireTypes';
 
 const INTERP_DELAY_MS = 100;
 const ZOOM_LEVELS = [1, 1.6, 2.4];
-const PHYSICS_SETTINGS = {
-  gravity: HOST_SETTING_RANGES.gravity.default,
-  boost: HOST_SETTING_RANGES.boost.default,
-};
+const TRACER_LIFETIME_MS = 80;
+const HIT_MARKER_LIFETIME_MS = 150;
+const DAMAGE_FLASH_LIFETIME_MS = 200;
 
 export interface MatchSceneData {
   /** Already connected — the lobby (Phase 05) establishes this before the match starts. */
@@ -53,6 +52,10 @@ export class MatchScene extends Phaser.Scene {
   private statusText?: Phaser.GameObjects.Text;
   private netStatsText?: Phaser.GameObjects.Text;
   private fuelBarFill?: Phaser.GameObjects.Rectangle;
+  private healthText?: Phaser.GameObjects.Text;
+  private gunBoxText?: Phaser.GameObjects.Text;
+  private hitMarker?: Phaser.GameObjects.Text;
+  private damageFlash?: Phaser.GameObjects.Rectangle;
 
   private zoomIndex = 0;
   private cameraX = 0;
@@ -119,12 +122,25 @@ export class MatchScene extends Phaser.Scene {
 
     const myPlayer: PlayerWireState | undefined = this.room.state.players.get(this.room.sessionId);
     if (myPlayer) {
+      const roomState = this.room.state as unknown as MatchRoomWireState;
       this.myReconciler = this.predict.reconciler(myPlayer, {
         input: this.inputHandle,
         fields: ['x', 'y', 'vx', 'vy', 'facing', 'crouching', 'onGround', 'fuel'],
-        step: createPredictStep(this.collisionMap, PHYSICS_SETTINGS),
+        step: createPredictStep(this.collisionMap, {
+          gravity: roomState.settings.gravity,
+          boost: roomState.settings.boost,
+        }),
       });
     }
+
+    this.room.onMessage('shotFired', (msg: { shooterId: string; x: number; y: number; angle: number }) => {
+      this.showTracer(msg.x, msg.y, msg.angle);
+      if (msg.shooterId === this.room.sessionId) this.showMuzzleFlash(msg.x, msg.y, msg.angle);
+    });
+    this.room.onMessage('hit', (msg: { shooterId: string; targetId: string }) => {
+      if (msg.shooterId === this.room.sessionId) this.showHitMarker();
+      if (msg.targetId === this.room.sessionId) this.showDamageFlash();
+    });
 
     this.inputController = new InputController(this, IS_TOUCH_DEVICE, () => {
       const me: PlayerWireState | undefined = this.room.state.players.get(this.room.sessionId);
@@ -203,6 +219,84 @@ export class MatchScene extends Phaser.Scene {
       .setOrigin(0, 0)
       .setScrollFactor(0)
       .setDepth(1000);
+
+    this.healthText = this.add
+      .text(8, 90, 'HP 100', { fontFamily: 'sans-serif', fontSize: '16px', color: '#3cb44b' })
+      .setScrollFactor(0)
+      .setDepth(1000);
+
+    this.gunBoxText = this.add
+      .text(this.scale.width - 8, 8, '', {
+        fontFamily: 'sans-serif',
+        fontSize: '14px',
+        color: '#e5e7eb',
+        align: 'right',
+      })
+      .setOrigin(1, 0)
+      .setScrollFactor(0)
+      .setDepth(1000)
+      .setInteractive()
+      .on('pointerdown', () => this.inputController?.requestSwap());
+
+    this.hitMarker = this.add
+      .text(0, 0, '✕', { fontFamily: 'sans-serif', fontSize: '22px', color: '#ffffff' })
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(1001)
+      .setVisible(false);
+
+    this.damageFlash = this.add
+      .rectangle(0, 0, this.scale.width, this.scale.height, 0xff0000, 0.25)
+      .setOrigin(0, 0)
+      .setScrollFactor(0)
+      .setDepth(999)
+      .setVisible(false);
+  }
+
+  private showTracer(x: number, y: number, angle: number) {
+    const length = 300;
+    const line = this.add
+      .line(0, 0, x, y, x + Math.cos(angle) * length, y + Math.sin(angle) * length, 0xffffaa, 0.8)
+      .setOrigin(0, 0)
+      .setLineWidth(1.5)
+      .setDepth(500);
+    this.time.delayedCall(TRACER_LIFETIME_MS, () => line.destroy());
+  }
+
+  private showMuzzleFlash(x: number, y: number, angle: number) {
+    const flash = this.add
+      .circle(x + Math.cos(angle) * 18, y + Math.sin(angle) * 18, 6, 0xffee88, 0.9)
+      .setDepth(501);
+    this.time.delayedCall(TRACER_LIFETIME_MS, () => flash.destroy());
+  }
+
+  private showHitMarker() {
+    if (!this.hitMarker) return;
+    this.hitMarker.setPosition(this.scale.width / 2, this.scale.height / 2).setVisible(true);
+    this.time.delayedCall(HIT_MARKER_LIFETIME_MS, () => this.hitMarker?.setVisible(false));
+  }
+
+  private showDamageFlash() {
+    if (!this.damageFlash) return;
+    this.damageFlash.setVisible(true);
+    this.time.delayedCall(DAMAGE_FLASH_LIFETIME_MS, () => this.damageFlash?.setVisible(false));
+  }
+
+  private updateCombatHud(me: PlayerWireState) {
+    if (this.healthText) {
+      this.healthText.setText(`HP ${Math.round(me.health)}`);
+      this.healthText.setColor(me.health > 50 ? '#3cb44b' : me.health > 25 ? '#f58231' : '#e6194b');
+    }
+
+    if (this.gunBoxText) {
+      const slot = me.activeSlotIndex === 0 ? me.slot1 : me.slot2;
+      const label =
+        slot.kind === 'dual'
+          ? `${slot.weapon1}+${slot.weapon2}  ${slot.ammoInMagazine1 + slot.ammoInMagazine2}/${slot.ammoReserve1 + slot.ammoReserve2}`
+          : `${slot.weapon1}  ${slot.ammoInMagazine1}/${slot.ammoReserve1}`;
+      const reloading = slot.reloadRemainingSeconds > 0;
+      this.gunBoxText.setText(reloading ? `${label} (reloading…)` : label);
+    }
   }
 
   private updateDebugHud() {
@@ -253,9 +347,20 @@ export class MatchScene extends Phaser.Scene {
       const y = this.predict.value(schemaPlayer, 'y');
       const isMe = sessionId === this.room.sessionId;
       const aimAngle = isMe ? this.myLastAimAngle : this.predict.value(schemaPlayer, 'aimAngle');
-      view.render(x, y, schemaPlayer.facing, schemaPlayer.crouching, aimAngle);
-      if (isMe)
+      view.render(
+        x,
+        y,
+        schemaPlayer.facing,
+        schemaPlayer.crouching,
+        aimAngle,
+        schemaPlayer.alive,
+        schemaPlayer.health,
+        schemaPlayer.shieldSecondsRemaining,
+      );
+      if (isMe) {
         this.fuelBarFill?.setSize(118 * Phaser.Math.Clamp(schemaPlayer.fuel / 100, 0, 1), 8);
+        this.updateCombatHud(schemaPlayer);
+      }
     }
 
     const me: PlayerWireState | undefined = this.room.state.players.get(this.room.sessionId);

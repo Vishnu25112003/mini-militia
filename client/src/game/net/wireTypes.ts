@@ -19,6 +19,19 @@ export interface PlayerInputWire {
   pickupOrPair: boolean;
 }
 
+/** Mirrors `server/src/schema/SlotSchema.ts`. */
+export interface SlotWire {
+  kind: 'single' | 'dual';
+  weapon1: string;
+  weapon2: string;
+  ammoInMagazine1: number;
+  ammoInMagazine2: number;
+  ammoReserve1: number;
+  ammoReserve2: number;
+  cooldownRemainingSeconds: number;
+  reloadRemainingSeconds: number;
+}
+
 /**
  * Mirrors `server/src/schema/PlayerSchema.ts`'s scalar fields — the flat
  * shape `predict.reconciler` mirrors locally for rollback. Also what a
@@ -38,6 +51,17 @@ export interface PlayerWireState {
   name: string;
   /** Lobby-only: has this player pressed Start? Unused once the match is playing. */
   ready: boolean;
+
+  health: number;
+  alive: boolean;
+  /** Seconds of spawn shield remaining; 0 once it's expired. */
+  shieldSecondsRemaining: number;
+  activeSlotIndex: number;
+  slot1: SlotWire;
+  slot2: SlotWire;
+  kills: number;
+  deaths: number;
+  points: number;
 }
 
 /** Mirrors `server/src/schema/HostSettingsSchema.ts`'s `LoadoutSlotSchema`. */
