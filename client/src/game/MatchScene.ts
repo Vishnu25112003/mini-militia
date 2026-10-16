@@ -6,7 +6,7 @@ import {
   type Reconciler,
   type Room,
 } from '@colyseus/sdk';
-import { GAME_NAME, loadMap, type TiledMapJson } from '@game/shared';
+import { GAME_NAME, WEAPONS, loadMap, type TiledMapJson, type WeaponId } from '@game/shared';
 import catacombsMap from '@game/shared/maps/catacombs.json';
 import tilesetUrl from '@game/shared/maps/tileset.png';
 import { IS_TOUCH_DEVICE } from '../isTouchDevice';
@@ -16,10 +16,10 @@ import { createPredictStep } from './net/predictStep';
 import type { MatchRoomWireState, PlayerInputWire, PlayerWireState } from './net/wireTypes';
 
 const INTERP_DELAY_MS = 100;
-const ZOOM_LEVELS = [1, 1.6, 2.4];
 const TRACER_LIFETIME_MS = 80;
 const HIT_MARKER_LIFETIME_MS = 150;
 const DAMAGE_FLASH_LIFETIME_MS = 200;
+const EXPLOSION_FLASH_LIFETIME_MS = 250;
 
 export interface MatchSceneData {
   /** Already connected — the lobby (Phase 05) establishes this before the match starts. */
@@ -56,8 +56,10 @@ export class MatchScene extends Phaser.Scene {
   private gunBoxText?: Phaser.GameObjects.Text;
   private hitMarker?: Phaser.GameObjects.Text;
   private damageFlash?: Phaser.GameObjects.Rectangle;
+  private zoomLabelText?: Phaser.GameObjects.Text;
 
-  private zoomIndex = 0;
+  /** Toggled 1x ↔ the currently held gun's own zoom stat (e.g. M93BA 3x) — not a fixed cycle. */
+  private zoomedIn = false;
   private cameraX = 0;
   private cameraY = 0;
 
@@ -91,7 +93,7 @@ export class MatchScene extends Phaser.Scene {
     this.cameraX = tilemap.widthInPixels / 2;
     this.cameraY = tilemap.heightInPixels / 2;
     this.cameras.main.setBounds(0, 0, tilemap.widthInPixels, tilemap.heightInPixels);
-    this.cameras.main.setZoom(ZOOM_LEVELS[0]!);
+    this.cameras.main.setZoom(1);
     this.cameras.main.centerOn(this.cameraX, this.cameraY);
 
     this.setUpZoomControl();
@@ -141,6 +143,12 @@ export class MatchScene extends Phaser.Scene {
       if (msg.shooterId === this.room.sessionId) this.showHitMarker();
       if (msg.targetId === this.room.sessionId) this.showDamageFlash();
     });
+    this.room.onMessage('projectileFired', (msg: { ownerId: string; x: number; y: number; angle: number }) => {
+      if (msg.ownerId === this.room.sessionId) this.showMuzzleFlash(msg.x, msg.y, msg.angle);
+    });
+    this.room.onMessage('explosion', (msg: { x: number; y: number }) => {
+      this.showExplosion(msg.x, msg.y);
+    });
 
     this.inputController = new InputController(this, IS_TOUCH_DEVICE, () => {
       const me: PlayerWireState | undefined = this.room.state.players.get(this.room.sessionId);
@@ -155,9 +163,9 @@ export class MatchScene extends Phaser.Scene {
   }
 
   private setUpZoomControl() {
-    const cycleZoom = () => {
-      this.zoomIndex = (this.zoomIndex + 1) % ZOOM_LEVELS.length;
-      this.cameras.main.setZoom(ZOOM_LEVELS[this.zoomIndex]!);
+    const toggleZoom = () => {
+      this.zoomedIn = !this.zoomedIn;
+      this.applyZoomForActiveWeapon();
     };
 
     if (IS_TOUCH_DEVICE) {
@@ -171,12 +179,23 @@ export class MatchScene extends Phaser.Scene {
         .setOrigin(0.5)
         .setScrollFactor(0)
         .setDepth(1001);
-      button.on('pointerdown', cycleZoom);
+      button.on('pointerdown', toggleZoom);
     } else {
       this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-        if (pointer.rightButtonDown()) cycleZoom();
+        if (pointer.rightButtonDown()) toggleZoom();
       });
     }
+  }
+
+  /** Re-applied every frame too, so swapping guns while zoomed in updates the zoom level. */
+  private applyZoomForActiveWeapon() {
+    const me: PlayerWireState | undefined = this.room?.state.players.get(this.room.sessionId);
+    const slot = me ? (me.activeSlotIndex === 0 ? me.slot1 : me.slot2) : undefined;
+    const weapon = slot ? WEAPONS[slot.weapon1 as WeaponId] : undefined;
+    const zoom = this.zoomedIn && weapon ? weapon.zoom : 1;
+
+    this.cameras.main.setZoom(zoom);
+    this.zoomLabelText?.setText(`${zoom.toFixed(1)}X`);
   }
 
   private setUpDebugToggle() {
@@ -251,6 +270,26 @@ export class MatchScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setDepth(999)
       .setVisible(false);
+
+    this.zoomLabelText = this.add
+      .text(IS_TOUCH_DEVICE ? 70 : 8, IS_TOUCH_DEVICE ? 40 : 56, '1.0X', {
+        fontFamily: 'sans-serif',
+        fontSize: '12px',
+        color: '#e5e7eb',
+      })
+      .setScrollFactor(0)
+      .setDepth(1000);
+  }
+
+  private showExplosion(x: number, y: number) {
+    const flash = this.add.circle(x, y, 48, 0xffaa33, 0.5).setDepth(502);
+    this.tweens.add({
+      targets: flash,
+      scale: 1.6,
+      alpha: 0,
+      duration: EXPLOSION_FLASH_LIFETIME_MS,
+      onComplete: () => flash.destroy(),
+    });
   }
 
   private showTracer(x: number, y: number, angle: number) {
@@ -292,7 +331,7 @@ export class MatchScene extends Phaser.Scene {
       const slot = me.activeSlotIndex === 0 ? me.slot1 : me.slot2;
       const label =
         slot.kind === 'dual'
-          ? `${slot.weapon1}+${slot.weapon2}  ${slot.ammoInMagazine1 + slot.ammoInMagazine2}/${slot.ammoReserve1 + slot.ammoReserve2}`
+          ? `${slot.weapon1} ${slot.ammoInMagazine1}/${slot.ammoReserve1}  +  ${slot.weapon2} ${slot.ammoInMagazine2}/${slot.ammoReserve2}`
           : `${slot.weapon1}  ${slot.ammoInMagazine1}/${slot.ammoReserve1}`;
       const reloading = slot.reloadRemainingSeconds > 0;
       this.gunBoxText.setText(reloading ? `${label} (reloading…)` : label);
@@ -360,6 +399,7 @@ export class MatchScene extends Phaser.Scene {
       if (isMe) {
         this.fuelBarFill?.setSize(118 * Phaser.Math.Clamp(schemaPlayer.fuel / 100, 0, 1), 8);
         this.updateCombatHud(schemaPlayer);
+        this.applyZoomForActiveWeapon();
       }
     }
 

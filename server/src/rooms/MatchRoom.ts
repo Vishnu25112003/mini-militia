@@ -3,22 +3,32 @@ import {
   HOST_SETTING_RANGES,
   MATCH_RULES,
   PLAYER_COLORS,
+  PROJECTILE_WEAPONS,
+  WEAPONS,
+  WEAPON_RANGE_PX,
   applyDamage,
   canFireActiveSlot,
   damageParamsForShot,
   fireActiveSlot,
+  hitscanRangeForWeapons,
   pointsOnDeath,
   pointsOnKill,
+  projectileHitsPlayer,
+  projectileHitsWall,
   resolveHitscanShot,
+  resolveSplashDamage,
   startReloadActiveSlot,
   step,
+  stepProjectile,
   swapActiveSlot,
   tickCombatTimers,
   validateName,
   type HitscanTarget,
   type PlayerInput,
   type PlayerState,
+  type Projectile,
   type Slot,
+  type SplashTarget,
   type WeaponStats,
 } from '@game/shared';
 import { MatchRoomState } from '../schema/MatchRoomState.js';
@@ -124,6 +134,8 @@ export class MatchRoom extends Room<{
   private respawnTimers = new Map<string, Delayed>();
   /** Edge-detects `swapSlot` so holding the button doesn't toggle every tick. */
   private prevSwapHeld = new Map<string, boolean>();
+  private projectiles: Projectile[] = [];
+  private projectileIdCounter = 0;
 
   inputs = this.defineInput(PlayerInputSchema, {
     sanitize: { moveX: [-1, 1] },
@@ -333,19 +345,26 @@ export class MatchRoom extends Room<{
         this.prevSwapHeld.set(sessionId, input.swapSlot);
 
         if (input.fire && canFireActiveSlot(latest)) {
-          const fired = fireActiveSlot(latest);
+          const fired = fireActiveSlot(latest, input.aimAngle);
           latest = fired.state;
-          this.broadcast('shotFired', {
-            shooterId: sessionId,
-            x: latest.position.x,
-            y: latest.position.y,
-            angle: input.aimAngle,
-          });
-          // May return the shooter's own state updated with kill credit — fold it into
-          // `latest` so the end-of-iteration `this.players.set(sessionId, latest)` below
-          // doesn't clobber it with the pre-kill value.
-          const shooterAfterResolve = this.resolveShot(sessionId, latest, input.aimAngle, fired.weaponsFired);
-          if (shooterAfterResolve) latest = shooterAfterResolve;
+
+          if (fired.fireKind === 'projectile') {
+            this.spawnProjectile(sessionId, latest, input.aimAngle, fired.weaponsFired[0]!);
+          } else {
+            for (const rayAngle of fired.rayAngles) {
+              this.broadcast('shotFired', {
+                shooterId: sessionId,
+                x: latest.position.x,
+                y: latest.position.y,
+                angle: rayAngle,
+              });
+              // May return the shooter's own state updated with kill credit — fold it into
+              // `latest` so the end-of-iteration `this.players.set(sessionId, latest)` below
+              // doesn't clobber it with the pre-kill value.
+              const shooterAfterResolve = this.resolveShot(sessionId, latest, rayAngle, fired.weaponsFired);
+              if (shooterAfterResolve) latest = shooterAfterResolve;
+            }
+          }
         }
 
         if (!latest.alive) break; // this tick's own shot (or another's) just killed them
@@ -358,6 +377,11 @@ export class MatchRoom extends Room<{
 
       if (!latest.alive) this.scheduleRespawn(sessionId);
     }
+
+    // Separate pass, after every player's own turn — a projectile's explosion (even one
+    // fired this very tick) never needs to be folded back into a `latest` local like the
+    // hitscan path above, since every player's end-of-iteration write has already happened.
+    this.tickProjectiles();
   }
 
   /**
@@ -390,6 +414,7 @@ export class MatchRoom extends Room<{
       shooterState.position.x,
       shooterState.position.y,
       aimAngle,
+      hitscanRangeForWeapons(weaponsFired),
       targets,
     );
     if (!result) return undefined;
@@ -423,6 +448,16 @@ export class MatchRoom extends Room<{
     const shooterSchema = this.state.players.get(shooterSessionId);
     if (shooterSchema) syncSchemaFromState(shooterSchema, updatedShooter, shooterSchema.aimAngle);
 
+    this.handleDeathNoKillCredit(victimSessionId, victimState);
+    return updatedShooter;
+  }
+
+  /**
+   * Death scoring with no kill credited to anyone — a self-kill (SMAW/RG6
+   * self-damage, per the flow) or a death whose shooter has since left the
+   * room. Shared by `handleKill` for the victim half of a normal kill too.
+   */
+  private handleDeathNoKillCredit(victimSessionId: string, victimState: PlayerState): PlayerState {
     const updatedVictim: PlayerState = {
       ...victimState,
       deaths: victimState.deaths + 1,
@@ -433,7 +468,107 @@ export class MatchRoom extends Room<{
     if (victimSchema) syncSchemaFromState(victimSchema, updatedVictim, victimSchema.aimAngle);
 
     this.scheduleRespawn(victimSessionId);
-    return updatedShooter;
+    return updatedVictim;
+  }
+
+  private spawnProjectile(ownerId: string, shooterState: PlayerState, angle: number, weapon: WeaponStats) {
+    const config = PROJECTILE_WEAPONS[weapon.id];
+    if (!config) return; // shouldn't happen — fireKindForWeapon only returns 'projectile' for SMAW/RG6
+
+    const projectile: Projectile = {
+      id: `${ownerId}-${this.projectileIdCounter++}`,
+      ownerId,
+      weapon: weapon.id,
+      x: shooterState.position.x,
+      y: shooterState.position.y,
+      angle,
+      speedPxPerSec: config.speedPxPerSec,
+      travelledPx: 0,
+      maxRangePx: WEAPON_RANGE_PX[weapon.range],
+    };
+    this.projectiles.push(projectile);
+    this.broadcast('projectileFired', {
+      ownerId,
+      x: projectile.x,
+      y: projectile.y,
+      angle,
+      weapon: weapon.id,
+    });
+  }
+
+  private tickProjectiles() {
+    if (this.projectiles.length === 0) return;
+
+    const stillFlying: Projectile[] = [];
+    for (const flying of this.projectiles) {
+      const moved = stepProjectile(flying, DT_SECONDS);
+      const hitWall = projectileHitsWall(this.catacombs.collisionMap, moved);
+
+      // The owner can never be a DIRECT-hit target — the projectile spawns at their own
+      // body center, so for some aim angles it wouldn't otherwise clear their hitbox
+      // before this very first collision check. Self-damage still happens normally,
+      // just only via splash (explodeProjectile includes the owner as a splash target).
+      let hitPlayerId: string | null = null;
+      if (!hitWall) {
+        for (const [sessionId, playerState] of this.players) {
+          if (!playerState.alive || sessionId === flying.ownerId) continue;
+          if (projectileHitsPlayer(moved, playerState.position.x, playerState.position.y)) {
+            hitPlayerId = sessionId;
+            break;
+          }
+        }
+      }
+
+      if (hitWall || hitPlayerId || moved.travelledPx >= moved.maxRangePx) {
+        this.explodeProjectile(moved, hitPlayerId);
+      } else {
+        stillFlying.push(moved);
+      }
+    }
+    this.projectiles = stillFlying;
+  }
+
+  private explodeProjectile(projectile: Projectile, directHitTargetId: string | null) {
+    const weapon = WEAPONS[projectile.weapon];
+    const config = PROJECTILE_WEAPONS[projectile.weapon]!;
+    this.broadcast('explosion', { x: projectile.x, y: projectile.y, weapon: projectile.weapon });
+
+    const targets: SplashTarget[] = [];
+    for (const [sessionId, playerState] of this.players) {
+      if (!playerState.alive) continue;
+      targets.push({
+        id: sessionId,
+        x: playerState.position.x,
+        y: playerState.position.y,
+        crouching: playerState.crouching,
+        facing: playerState.facing,
+      });
+    }
+
+    const hits = resolveSplashDamage(weapon, projectile.x, projectile.y, config.splashRadiusPx, directHitTargetId, targets);
+
+    for (const hit of hits) {
+      const targetState = this.players.get(hit.targetId);
+      if (!targetState || targetState.shieldSecondsRemaining > 0) continue; // spawn shield absorbs it
+
+      const damaged = applyDamage(targetState, hit.params);
+      this.players.set(hit.targetId, damaged);
+      const targetSchema = this.state.players.get(hit.targetId);
+      if (targetSchema) syncSchemaFromState(targetSchema, damaged, targetSchema.aimAngle);
+
+      this.broadcast('hit', { shooterId: projectile.ownerId, targetId: hit.targetId });
+
+      if (!damaged.alive) {
+        const shooterState =
+          hit.targetId !== projectile.ownerId ? this.players.get(projectile.ownerId) : undefined;
+        if (shooterState) {
+          this.handleKill(projectile.ownerId, shooterState, hit.targetId, damaged);
+        } else {
+          // Self-damage (own SMAW/RG6, per the flow) or the shooter has since left — no kill credit.
+          this.handleDeathNoKillCredit(hit.targetId, damaged);
+        }
+      }
+    }
   }
 
   private scheduleRespawn(sessionId: string) {
