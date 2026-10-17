@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Room } from '@colyseus/sdk';
 import { rankPlayers } from '@game/shared';
 import { ControlsPopupBody, Popup, smallButtonStyle } from './Popup';
+import { playUiClick } from './game/sound';
 import { useLeaveHandler } from './useLeaveHandler';
 import type { MatchRoomWireState, PlayerWireState } from './game/net/wireTypes';
 
@@ -160,7 +161,7 @@ export function MatchOverlay({
           <div style={{ background: '#16171d', borderRadius: '8px', padding: '12px', color: '#e5e7eb' }}>
             <LeaderboardTable rows={buildLeaderboard(state.players)} meId={room.sessionId} />
           </div>
-          <button onClick={() => setShowControls(true)} style={smallButtonStyle}>
+          <button onClick={() => { playUiClick(); setShowControls(true); }} style={smallButtonStyle}>
             Controls
           </button>
         </div>
@@ -185,7 +186,7 @@ export function MatchOverlay({
             <LeaderboardTable rows={buildLeaderboard(state.players)} meId={room.sessionId} />
           </div>
           <div style={{ color: '#9aa0ac', fontSize: '12px' }}>Back to the lobby shortly…</div>
-          <button onClick={() => setShowControls(true)} style={smallButtonStyle}>
+          <button onClick={() => { playUiClick(); setShowControls(true); }} style={smallButtonStyle}>
             Controls
           </button>
         </div>

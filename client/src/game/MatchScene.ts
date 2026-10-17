@@ -15,7 +15,20 @@ import { TouchButton } from './input/TouchButton';
 import { loadTouchLayout } from './input/touchLayout';
 import { registerControl, unregisterControl } from './input/touchControlRegistry';
 import { EffectPool } from './EffectPool';
+import { drawGroundItemIcon } from './groundItemIcon';
 import { PlayerView } from './PlayerView';
+import {
+  playExplosion,
+  playGasHiss,
+  playHit,
+  playHitscanShot,
+  playDeath,
+  playMelee,
+  playPickup,
+  playProjectileShot,
+  playReload,
+  setJetpackActive,
+} from './sound';
 import { createPredictStep } from './net/predictStep';
 import type {
   GroundItemWire,
@@ -23,13 +36,6 @@ import type {
   PlayerInputWire,
   PlayerWireState,
 } from './net/wireTypes';
-
-const GROUND_ITEM_COLOR: Record<GroundItemWire['kind'], number> = {
-  gun: 0xffcc00,
-  medkit: 0xe6194b,
-  grenadePair: 0x3cb44b,
-  boostTank: 0x4363d8,
-};
 
 const INTERP_DELAY_MS = 100;
 const TRACER_LIFETIME_MS = 80;
@@ -68,11 +74,12 @@ export class MatchScene extends Phaser.Scene {
   private myReconciler?: Reconciler<PlayerWireState, PlayerInputWire>;
   private inputController!: InputController;
   private myLastAimAngle = 0;
+  private wasAlive = true;
 
   private playerViews = new Map<string, PlayerView>();
   private groundItemViews = new Map<
     string,
-    { marker: Phaser.GameObjects.Arc; label: Phaser.GameObjects.Text }
+    { marker: Phaser.GameObjects.Graphics; label: Phaser.GameObjects.Text }
   >();
   private collisionMap!: ReturnType<typeof loadMap>['collisionMap'];
 
@@ -177,9 +184,8 @@ export class MatchScene extends Phaser.Scene {
     });
 
     $(this.room.state).groundItems.onAdd((item: GroundItemWire, id: string) => {
-      const marker = this.add
-        .circle(item.x, item.y, 10, GROUND_ITEM_COLOR[item.kind], 0.9)
-        .setDepth(300);
+      const marker = this.add.graphics().setPosition(item.x, item.y).setDepth(300);
+      drawGroundItemIcon(marker, item);
       const labelText = item.kind === 'gun' ? item.weapon : item.kind === 'grenadePair' ? item.grenadeType : item.kind;
       const label = this.add
         .text(item.x, item.y - 18, labelText ?? '', {
@@ -196,6 +202,10 @@ export class MatchScene extends Phaser.Scene {
       view?.marker.destroy();
       view?.label.destroy();
       this.groundItemViews.delete(id);
+      // Also fires on the 14-spot refresh cycle's despawns, not just real
+      // pickups — a reasonable approximation given there's no dedicated
+      // "picked up" broadcast to key off instead.
+      playPickup();
     });
 
     this.predict = Predict.get(this.room, { mode: 'lerp', delay: INTERP_DELAY_MS });
@@ -220,26 +230,36 @@ export class MatchScene extends Phaser.Scene {
     this.room.onMessage('shotFired', (msg: { shooterId: string; x: number; y: number; angle: number }) => {
       this.showTracer(msg.x, msg.y, msg.angle);
       if (msg.shooterId === this.room.sessionId) this.showMuzzleFlash(msg.x, msg.y, msg.angle);
+      playHitscanShot();
     });
     this.room.onMessage('hit', (msg: { shooterId: string; targetId: string }) => {
-      if (msg.shooterId === this.room.sessionId) this.showHitMarker();
+      if (msg.shooterId === this.room.sessionId) {
+        this.showHitMarker();
+        playHit();
+      }
       if (msg.targetId === this.room.sessionId) this.showDamageFlash();
     });
     this.room.onMessage('projectileFired', (msg: { ownerId: string; x: number; y: number; angle: number }) => {
       if (msg.ownerId === this.room.sessionId) this.showMuzzleFlash(msg.x, msg.y, msg.angle);
+      playProjectileShot();
     });
     this.room.onMessage('explosion', (msg: { x: number; y: number }) => {
       this.showExplosion(msg.x, msg.y);
+      playExplosion();
     });
     this.room.onMessage('grenadeExploded', (msg: { x: number; y: number }) => {
       this.showExplosion(msg.x, msg.y);
+      playExplosion();
     });
     this.room.onMessage('gasLanded', (msg: { x: number; y: number }) => {
       this.showGasCloud(msg.x, msg.y);
+      playGasHiss();
     });
     this.room.onMessage('melee', (msg: { attackerId: string; targetId: string }) => {
       if (msg.attackerId === this.room.sessionId) this.showHitMarker();
       if (msg.targetId === this.room.sessionId) this.showDamageFlash();
+      this.playerViews.get(msg.attackerId)?.playMeleeSwing();
+      playMelee();
     });
 
     this.inputController = new InputController(this, IS_TOUCH_DEVICE, () => {
@@ -264,11 +284,11 @@ export class MatchScene extends Phaser.Scene {
       const { width, height } = this.scale;
       const layout = loadTouchLayout(width, height);
 
-      this.zoomButton = new TouchButton(this, layout.zoomButton.x, layout.zoomButton.y, 'zoom', 24);
+      this.zoomButton = new TouchButton(this, layout.zoomButton.x, layout.zoomButton.y, 'zoom', 24, 'zoom');
       this.zoomButton.setLayout(layout.zoomButton);
       registerControl('zoomButton', this.zoomButton, width, height);
 
-      this.chatButton = new TouchButton(this, layout.chatButton.x, layout.chatButton.y, 'chat', 24);
+      this.chatButton = new TouchButton(this, layout.chatButton.x, layout.chatButton.y, 'chat', 24, 'chat');
       this.chatButton.setLayout(layout.chatButton);
       registerControl('chatButton', this.chatButton, width, height);
     } else {
@@ -532,6 +552,7 @@ export class MatchScene extends Phaser.Scene {
       this.inputHandle.data.throwGrenade = sample.throwGrenade;
       this.inputHandle.data.switchGrenade = sample.switchGrenade;
       this.inputHandle.data.reload = sample.reload;
+      if (sample.reload) playReload();
       this.inputHandle.data.swapSlot = sample.swapSlot;
       this.inputHandle.data.pickupOrPair = sample.pickupOrPair;
       this.inputHandle.data.replaceSlotChoice = sample.replaceSlotChoice;
@@ -547,6 +568,8 @@ export class MatchScene extends Phaser.Scene {
       const y = this.predict.value(schemaPlayer, 'y');
       const isMe = sessionId === this.room.sessionId;
       const aimAngle = isMe ? this.myLastAimAngle : this.predict.value(schemaPlayer, 'aimAngle');
+      const activeSlot = schemaPlayer.activeSlotIndex === 0 ? schemaPlayer.slot1 : schemaPlayer.slot2;
+      const weaponId = (activeSlot.weapon1 || null) as WeaponId | null;
       view.render(
         x,
         y,
@@ -556,8 +579,15 @@ export class MatchScene extends Phaser.Scene {
         schemaPlayer.alive && schemaPlayer.connected,
         schemaPlayer.health,
         schemaPlayer.shieldSecondsRemaining,
+        schemaPlayer.onGround,
+        schemaPlayer.vx,
+        weaponId,
       );
       if (isMe) {
+        if (this.wasAlive && !schemaPlayer.alive) playDeath();
+        this.wasAlive = schemaPlayer.alive;
+        setJetpackActive(schemaPlayer.alive && !schemaPlayer.onGround);
+
         this.fuelBarFill?.setSize(118 * Phaser.Math.Clamp(schemaPlayer.fuel / 100, 0, 1), 8);
         this.updateCombatHud(schemaPlayer);
         this.updatePickupPrompt(schemaPlayer);
@@ -592,5 +622,7 @@ export class MatchScene extends Phaser.Scene {
     this.chatButton?.destroy();
     unregisterControl('zoomButton');
     unregisterControl('chatButton');
+
+    setJetpackActive(false); // leaving mid-flight shouldn't leave the hum looping forever
   }
 }

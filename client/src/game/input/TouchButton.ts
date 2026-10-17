@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { ResizeHandle } from './ResizeHandle';
 import type { ControlLayout } from './touchLayout';
+import { drawIcon, type IconId } from './uiIcons';
 
 /**
  * A round touch button with its own label. Tracks `justPressed` for one
@@ -12,13 +13,14 @@ export class TouchButton {
   private scene: Phaser.Scene;
   private circle: Phaser.GameObjects.Arc;
   private label: Phaser.GameObjects.Text;
+  private iconGraphics?: Phaser.GameObjects.Graphics;
   private resizeHandle: ResizeHandle;
   private baseRadius: number;
   private down = false;
   private pressedThisFrame = false;
   private editable = false;
 
-  constructor(scene: Phaser.Scene, x: number, y: number, text: string, radius = 30) {
+  constructor(scene: Phaser.Scene, x: number, y: number, text: string, radius = 30, icon?: IconId) {
     this.scene = scene;
     this.baseRadius = radius;
     this.circle = scene.add
@@ -28,10 +30,16 @@ export class TouchButton {
       .setInteractive({ useHandCursor: true, draggable: true });
     scene.input.setDraggable(this.circle, false);
     this.label = scene.add
-      .text(x, y, text, { fontFamily: 'sans-serif', fontSize: '11px', color: '#ffffff' })
+      .text(x, y, icon ? '' : text, { fontFamily: 'sans-serif', fontSize: '11px', color: '#ffffff' })
       .setOrigin(0.5)
       .setScrollFactor(0)
       .setDepth(1001);
+
+    if (icon) {
+      this.iconGraphics = scene.add.graphics().setScrollFactor(0).setDepth(1001);
+      drawIcon(this.iconGraphics, icon, radius);
+      this.iconGraphics.setPosition(x, y);
+    }
 
     this.circle.on('pointerdown', () => {
       if (this.editable) return;
@@ -61,12 +69,14 @@ export class TouchButton {
   private setPosition(x: number, y: number) {
     this.circle.setPosition(x, y);
     this.label.setPosition(x, y);
+    this.iconGraphics?.setPosition(x, y);
     this.resizeHandle.reposition(this.circle.scale);
   }
 
   private applyScale(scale: number) {
     this.circle.setScale(scale);
     this.label.setScale(scale);
+    this.iconGraphics?.setScale(scale);
     this.resizeHandle.reposition(scale);
   }
 
@@ -100,6 +110,7 @@ export class TouchButton {
   destroy() {
     this.circle.destroy();
     this.label.destroy();
+    this.iconGraphics?.destroy();
     this.resizeHandle.destroy();
   }
 }

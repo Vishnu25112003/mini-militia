@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { Room } from '@colyseus/sdk';
 import { useRoomState } from './useRoomState';
 import { HostSettingsPopup } from './HostSettingsPopup';
@@ -8,6 +8,7 @@ import { useLeaveHandler } from './useLeaveHandler';
 import { useChatMessages } from './useChatMessages';
 import { IS_TOUCH_DEVICE } from './isTouchDevice';
 import { requestFullscreenAndLockLandscape, unlockAudioContext } from './mobileHardening';
+import { playCountdownBeep, playUiClick } from './game/sound';
 import type { MatchRoomWireState, PlayerWireState } from './game/net/wireTypes';
 
 function formatMmSs(totalSeconds: number): string {
@@ -49,22 +50,36 @@ export function LobbyScreen({
 
   useLeaveHandler(room, onLeftRoom);
 
+  const lastCountdownBeepRef = useRef<number | null>(null);
+  useEffect(() => {
+    const secondsLeft = Math.ceil(state.autoStartRemainingSeconds);
+    if (secondsLeft > 3 || secondsLeft < 0) return;
+    if (lastCountdownBeepRef.current === secondsLeft) return;
+    lastCountdownBeepRef.current = secondsLeft;
+    playCountdownBeep(secondsLeft === 0);
+  }, [state.autoStartRemainingSeconds]);
+
   const handleStart = () => {
-    // The last guaranteed user gesture before the match — both of these
-    // require one, and real sound doesn't land until Phase 15 (Phase 14 just
-    // makes sure it'll work the moment it does).
+    // The last guaranteed user gesture before the match — both the Fullscreen
+    // API and Web Audio's unlock require one.
     unlockAudioContext();
+    playUiClick();
     if (IS_TOUCH_DEVICE) void requestFullscreenAndLockLandscape();
     room.send('ready');
   };
-  const handleRemove = (sessionId: string) => room.send('removePlayer', { sessionId });
+  const handleRemove = (sessionId: string) => {
+    playUiClick();
+    room.send('removePlayer', { sessionId });
+  };
   const handleLeave = () => {
+    playUiClick();
     clearReconnectToken(); // the player chose to leave — don't auto-resume this session
     room.leave();
     onLeftRoom();
   };
 
   const handleCopy = async () => {
+    playUiClick();
     try {
       await navigator.clipboard.writeText(state.roomCode);
       setCopied(true);
@@ -234,10 +249,24 @@ export function LobbyScreen({
           <button onClick={handleLeave} style={smallButtonStyle} title="Leave room">
             X
           </button>
-          <button onClick={() => setShowGear(true)} style={smallButtonStyle} title="Controls">
+          <button
+            onClick={() => {
+              playUiClick();
+              setShowGear(true);
+            }}
+            style={smallButtonStyle}
+            title="Controls"
+          >
             Gear
           </button>
-          <button onClick={() => setShowChat(true)} style={smallButtonStyle} title="Chat">
+          <button
+            onClick={() => {
+              playUiClick();
+              setShowChat(true);
+            }}
+            style={smallButtonStyle}
+            title="Chat"
+          >
             Chat
           </button>
         </div>

@@ -24,7 +24,14 @@ export class TouchInputSource implements InputSource {
 
     this.moveJoystick = new VirtualJoystick(scene, layout.moveJoystick.x, layout.moveJoystick.y, 55);
     this.moveJoystick.setLayout(layout.moveJoystick);
-    this.grenadeButton = new TouchButton(scene, layout.grenadeButton.x, layout.grenadeButton.y, 'nade');
+    this.grenadeButton = new TouchButton(
+      scene,
+      layout.grenadeButton.x,
+      layout.grenadeButton.y,
+      'nade',
+      30,
+      'grenade',
+    );
     this.grenadeButton.setLayout(layout.grenadeButton);
     this.switchGrenadeButton = new TouchButton(
       scene,
@@ -32,15 +39,30 @@ export class TouchInputSource implements InputSource {
       layout.switchGrenadeButton.y,
       'switch',
       22,
+      'switchGrenade',
     );
     this.switchGrenadeButton.setLayout(layout.switchGrenadeButton);
     this.aimJoystick = new VirtualJoystick(scene, layout.aimJoystick.x, layout.aimJoystick.y, 55);
     this.aimJoystick.setLayout(layout.aimJoystick);
-    this.meleeButton = new TouchButton(scene, layout.meleeButton.x, layout.meleeButton.y, 'melee');
+    this.meleeButton = new TouchButton(scene, layout.meleeButton.x, layout.meleeButton.y, 'melee', 30, 'melee');
     this.meleeButton.setLayout(layout.meleeButton);
-    this.reloadButton = new TouchButton(scene, layout.reloadButton.x, layout.reloadButton.y, 'reload');
+    this.reloadButton = new TouchButton(
+      scene,
+      layout.reloadButton.x,
+      layout.reloadButton.y,
+      'reload',
+      30,
+      'reload',
+    );
     this.reloadButton.setLayout(layout.reloadButton);
-    this.pickupButton = new TouchButton(scene, layout.pickupButton.x, layout.pickupButton.y, 'pickup');
+    this.pickupButton = new TouchButton(
+      scene,
+      layout.pickupButton.x,
+      layout.pickupButton.y,
+      'pickup',
+      30,
+      'pickup',
+    );
     this.pickupButton.setLayout(layout.pickupButton);
 
     registerControl('moveJoystick', this.moveJoystick, width, height);
