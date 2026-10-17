@@ -28,6 +28,8 @@ export const PlayerSchema = schema(
     alive: t.boolean().default(true),
     /** Seconds of spawn shield remaining; 0 once it's expired. */
     shieldSecondsRemaining: t.number().default(0),
+    /** Seconds left in the 5s respawn wait; 0 while alive. */
+    respawnRemainingSeconds: t.number().default(0),
     activeSlotIndex: t.number().default(0),
     slot1: SlotSchema,
     slot2: SlotSchema,

@@ -4,6 +4,7 @@ import { GameCanvas } from './game/GameCanvas';
 import { DevDebugPanel } from './game/DevDebugPanel';
 import { JoinScreen } from './JoinScreen';
 import { LobbyScreen } from './LobbyScreen';
+import { MatchOverlay } from './MatchOverlay';
 import { OrientationGate } from './OrientationGate';
 import './App.css';
 
@@ -26,6 +27,7 @@ function App() {
   }, []);
 
   const handleMatchStart = useCallback(() => setScreen('match'), []);
+  const handleReturnToLobby = useCallback(() => setScreen('lobby'), []);
 
   return (
     <OrientationGate>
@@ -40,7 +42,12 @@ function App() {
         {screen === 'lobby' && room && (
           <LobbyScreen room={room} onMatchStart={handleMatchStart} onLeftRoom={handleLeftRoom} />
         )}
-        {screen === 'match' && room && <GameCanvas sceneData={{ room }} />}
+        {screen === 'match' && room && (
+          <div style={{ position: 'relative' }}>
+            <GameCanvas sceneData={{ room }} />
+            <MatchOverlay room={room} onReturnToLobby={handleReturnToLobby} />
+          </div>
+        )}
         {import.meta.env.DEV && <DevDebugPanel />}
       </div>
     </OrientationGate>

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { Room } from '@colyseus/sdk';
 import { useRoomState } from './useRoomState';
 import { HostSettingsPopup } from './HostSettingsPopup';
+import { ControlsPopupBody, Popup, smallButtonStyle } from './Popup';
 import type { MatchRoomWireState, PlayerWireState } from './game/net/wireTypes';
 
 interface ChatMessage {
@@ -292,10 +293,7 @@ export function LobbyScreen({
 
       {showGear && (
         <Popup onClose={() => setShowGear(false)} title="Controls">
-          <p style={{ fontSize: '13px', width: '220px' }}>
-            Control customization is coming in a later phase. For now, see the README for the
-            default keyboard/touch layout.
-          </p>
+          <ControlsPopupBody />
         </Popup>
       )}
 
@@ -312,54 +310,3 @@ export function LobbyScreen({
     </div>
   );
 }
-
-function Popup({
-  title,
-  onClose,
-  children,
-}: {
-  title: string;
-  onClose: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 2000,
-      }}
-      onClick={onClose}
-    >
-      <div
-        style={{ background: '#16171d', padding: '16px', borderRadius: '8px', color: '#e5e7eb' }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-          <strong style={{ fontSize: '14px' }}>{title}</strong>
-          <button
-            onClick={onClose}
-            style={{ background: 'none', border: 'none', color: '#9aa0ac', cursor: 'pointer' }}
-          >
-            ✕
-          </button>
-        </div>
-        {children}
-      </div>
-    </div>
-  );
-}
-
-const smallButtonStyle: React.CSSProperties = {
-  padding: '6px 10px',
-  fontSize: '12px',
-  borderRadius: '4px',
-  border: '1px solid #374151',
-  background: 'transparent',
-  color: '#e5e7eb',
-  cursor: 'pointer',
-};

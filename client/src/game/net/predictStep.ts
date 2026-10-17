@@ -59,6 +59,7 @@ function toPlayerState(flat: PlayerWireState): PlayerState {
     gotKillThisLife: false,
     shieldSecondsRemaining: 0,
     alive: true,
+    respawnRemainingSeconds: 0,
   };
 }
 

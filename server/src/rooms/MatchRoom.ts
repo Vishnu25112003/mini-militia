@@ -90,6 +90,8 @@ const DT_SECONDS = 1 / TICK_RATE;
 const PATCH_RATE_MS = 50; // 20 Hz, per the flow's fixed decisions
 const REWIND_WINDOW_MS = 1000;
 const CHAT_MAX_LENGTH = 100;
+/** How long the final leaderboard stays up before the room returns to the lobby — not specified by the flow. */
+const FINAL_LEADERBOARD_SECONDS = 10;
 
 /** Custom WebSocket close codes clients can branch on in `room.onLeave((code, reason) => ...)`. */
 const LEAVE_CODE = { REMOVED_BY_HOST: 4000, ROOM_CANCELLED: 4001 } as const;
@@ -157,6 +159,7 @@ function syncSchemaFromState(
   target.health = source.health;
   target.alive = source.alive;
   target.shieldSecondsRemaining = source.shieldSecondsRemaining;
+  target.respawnRemainingSeconds = source.respawnRemainingSeconds;
   target.activeSlotIndex = source.activeSlotIndex;
   syncSlotSchema(target.slot1, source.slots[0]);
   syncSlotSchema(target.slot2, source.slots[1]);
@@ -203,6 +206,8 @@ export class MatchRoom extends Room<{
   private groundItemIdCounter = 0;
   private pickupCycleTimeout?: Delayed;
   private dropExpirySweepInterval?: Delayed;
+  private matchTimerInterval?: Delayed;
+  private returnToLobbyTimeout?: Delayed;
 
   inputs = this.defineInput(PlayerInputSchema, {
     sanitize: { moveX: [-1, 1] },
@@ -359,6 +364,63 @@ export class MatchRoom extends Room<{
     this.setFixedTimestep((ctx) => this.fixedTick(ctx), TICK_RATE);
     this.startPickupCycle();
     this.dropExpirySweepInterval = this.clock.setInterval(() => this.sweepExpiredDrops(), 1000);
+
+    this.state.matchTimeRemainingSeconds = this.state.settings.gameTimeSeconds;
+    this.matchTimerInterval = this.clock.setInterval(() => {
+      this.state.matchTimeRemainingSeconds = Math.max(0, this.state.matchTimeRemainingSeconds - 1);
+      if (this.state.matchTimeRemainingSeconds <= 0) this.endMatch();
+    }, 1000);
+  }
+
+  /** Time's up — ends for everyone at the same moment, shows the final leaderboard, then returns to the lobby. */
+  private endMatch() {
+    this.matchTimerInterval?.clear();
+    this.state.phase = 'ended';
+    this.cleanupMatchEphemeralState();
+
+    this.returnToLobbyTimeout = this.clock.setTimeout(
+      () => this.resetToLobby(),
+      FINAL_LEADERBOARD_SECONDS * 1000,
+    );
+  }
+
+  /** Same room, same code — players ready up again for another round. */
+  private resetToLobby() {
+    this.state.phase = 'lobby';
+    this.state.matchTimeRemainingSeconds = 0;
+    this.players.clear();
+
+    for (const schemaPlayer of this.state.players.values()) {
+      schemaPlayer.ready = false;
+      schemaPlayer.kills = 0;
+      schemaPlayer.deaths = 0;
+      schemaPlayer.points = 0;
+      schemaPlayer.health = 100;
+      schemaPlayer.alive = true;
+      schemaPlayer.respawnRemainingSeconds = 0;
+      schemaPlayer.nearbyGunItemId = '';
+      schemaPlayer.nearbyGunAction = '';
+    }
+
+    this.startAutoStartTimer();
+  }
+
+  /** Clears every piece of mid-match transient state — called once the match ends. */
+  private cleanupMatchEphemeralState() {
+    this.dropExpirySweepInterval?.clear();
+    this.pickupCycleTimeout?.clear();
+    for (const timer of this.respawnTimers.values()) timer.clear();
+    this.respawnTimers.clear();
+
+    this.projectiles = [];
+    this.grenades = [];
+    this.gasClouds = [];
+    this.pendingMeleeHits.clear();
+    this.prevSwapHeld.clear();
+    this.prevSwitchGrenadeHeld.clear();
+    this.prevPickupHeld.clear();
+
+    for (const id of [...this.groundItems.keys()]) this.removeGroundItem(id);
   }
 
   onLeave(client: Client) {
@@ -394,11 +456,19 @@ export class MatchRoom extends Room<{
     this.autoStartCountdownInterval?.clear();
     this.pickupCycleTimeout?.clear();
     this.dropExpirySweepInterval?.clear();
+    this.matchTimerInterval?.clear();
+    this.returnToLobbyTimeout?.clear();
     for (const timer of this.respawnTimers.values()) timer.clear();
   }
 
   private fixedTick(ctx: StepContext) {
+    // The match timer firing sets phase to 'ended' between ticks — the fixed-timestep driver
+    // itself can't be unregistered, so this guard is what actually stops simulation.
+    if (this.state.phase !== 'playing') return;
+
     const physicsSettings = { gravity: this.state.settings.gravity, boost: this.state.settings.boost };
+
+    this.tickRespawnCountdowns();
 
     for (const [sessionId, playerState] of this.players) {
       if (!playerState.alive) continue; // waiting out the respawn timer, which will replace this entry
@@ -576,6 +646,7 @@ export class MatchRoom extends Room<{
       alive: false,
       deaths: secondHitter.deaths + 1,
       points: secondHitter.points + pointsOnDeath(secondHitter.gotKillThisLife),
+      respawnRemainingSeconds: MATCH_RULES.respawnWaitSeconds,
     };
     this.players.set(secondHitterId, deadSecondHitter);
     const secondSchema = this.state.players.get(secondHitterId);
@@ -589,6 +660,7 @@ export class MatchRoom extends Room<{
         ...creditedFirstHitter,
         deaths: creditedFirstHitter.deaths + 1,
         points: creditedFirstHitter.points + pointsOnDeath(creditedFirstHitter.gotKillThisLife),
+        respawnRemainingSeconds: MATCH_RULES.respawnWaitSeconds,
       };
       this.players.set(firstHitterId, firstHitterAfterOwnDeath);
       if (firstSchema) syncSchemaFromState(firstSchema, firstHitterAfterOwnDeath, firstSchema.aimAngle);
@@ -832,6 +904,7 @@ export class MatchRoom extends Room<{
       ...victimState,
       deaths: victimState.deaths + 1,
       points: victimState.points + pointsOnDeath(victimState.gotKillThisLife),
+      respawnRemainingSeconds: MATCH_RULES.respawnWaitSeconds,
     };
     this.players.set(victimSessionId, updatedVictim);
     const victimSchema = this.state.players.get(victimSessionId);
@@ -865,6 +938,20 @@ export class MatchRoom extends Room<{
       angle,
       weapon: weapon.id,
     });
+  }
+
+  /** Counts down `respawnRemainingSeconds` for every dead player — purely cosmetic (the live leaderboard's countdown); `scheduleRespawn`'s own timer is what actually respawns them. */
+  private tickRespawnCountdowns() {
+    for (const [sessionId, playerState] of this.players) {
+      if (playerState.alive || playerState.respawnRemainingSeconds <= 0) continue;
+      const next: PlayerState = {
+        ...playerState,
+        respawnRemainingSeconds: Math.max(0, playerState.respawnRemainingSeconds - DT_SECONDS),
+      };
+      this.players.set(sessionId, next);
+      const schema = this.state.players.get(sessionId);
+      if (schema) schema.respawnRemainingSeconds = next.respawnRemainingSeconds;
+    }
   }
 
   private tickProjectiles() {

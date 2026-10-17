@@ -54,6 +54,7 @@ function makePlayer(overrides: Partial<PlayerState> = {}): PlayerState {
     gotKillThisLife: false,
     shieldSecondsRemaining: 0,
     alive: true,
+    respawnRemainingSeconds: 0,
     ...overrides,
   };
 }
