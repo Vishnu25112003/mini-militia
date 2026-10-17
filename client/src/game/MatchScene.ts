@@ -14,6 +14,7 @@ import { InputController } from './input/InputController';
 import { TouchButton } from './input/TouchButton';
 import { loadTouchLayout } from './input/touchLayout';
 import { registerControl, unregisterControl } from './input/touchControlRegistry';
+import { EffectPool } from './EffectPool';
 import { PlayerView } from './PlayerView';
 import { createPredictStep } from './net/predictStep';
 import type {
@@ -92,6 +93,19 @@ export class MatchScene extends Phaser.Scene {
   private zoomedIn = false;
   private cameraX = 0;
   private cameraY = 0;
+
+  // Pooled rather than created/destroyed per shot — a full-auto weapon across
+  // 8 players would otherwise allocate and GC a new GameObject every frame.
+  private tracerPool = new EffectPool(() =>
+    this.add.line(0, 0, 0, 0, 0, 0, 0xffffaa, 0.8).setOrigin(0, 0).setLineWidth(1.5).setDepth(500),
+  );
+  private muzzleFlashPool = new EffectPool(() =>
+    this.add.circle(0, 0, 6, 0xffee88, 0.9).setDepth(501),
+  );
+  private explosionFlashPool = new EffectPool(() =>
+    this.add.circle(0, 0, 48, 0xffaa33, 0.5).setDepth(502),
+  );
+  private gasCloudPool = new EffectPool(() => this.add.circle(0, 0, 96, 0x88cc44, 0.3).setDepth(400));
 
   constructor() {
     super('MatchScene');
@@ -405,42 +419,42 @@ export class MatchScene extends Phaser.Scene {
   }
 
   private showExplosion(x: number, y: number) {
-    const flash = this.add.circle(x, y, 48, 0xffaa33, 0.5).setDepth(502);
+    const flash = this.explosionFlashPool.acquire();
+    this.tweens.killTweensOf(flash);
+    flash.setPosition(x, y).setScale(1).setAlpha(0.5).setVisible(true);
     this.tweens.add({
       targets: flash,
       scale: 1.6,
       alpha: 0,
       duration: EXPLOSION_FLASH_LIFETIME_MS,
-      onComplete: () => flash.destroy(),
+      onComplete: () => this.explosionFlashPool.release(flash),
     });
   }
 
   /** Placeholder gas cloud — matches the Gasnade's 5-second duration (`MATCH_RULES` / `GRENADES.Gasnade`). */
   private showGasCloud(x: number, y: number) {
-    const cloud = this.add.circle(x, y, 96, 0x88cc44, 0.3).setDepth(400);
+    const cloud = this.gasCloudPool.acquire();
+    this.tweens.killTweensOf(cloud);
+    cloud.setPosition(x, y).setScale(1).setAlpha(0.3).setVisible(true);
     this.tweens.add({
       targets: cloud,
       alpha: 0,
       duration: GAS_CLOUD_LIFETIME_MS,
-      onComplete: () => cloud.destroy(),
+      onComplete: () => this.gasCloudPool.release(cloud),
     });
   }
 
   private showTracer(x: number, y: number, angle: number) {
     const length = 300;
-    const line = this.add
-      .line(0, 0, x, y, x + Math.cos(angle) * length, y + Math.sin(angle) * length, 0xffffaa, 0.8)
-      .setOrigin(0, 0)
-      .setLineWidth(1.5)
-      .setDepth(500);
-    this.time.delayedCall(TRACER_LIFETIME_MS, () => line.destroy());
+    const line = this.tracerPool.acquire();
+    line.setTo(x, y, x + Math.cos(angle) * length, y + Math.sin(angle) * length).setVisible(true);
+    this.time.delayedCall(TRACER_LIFETIME_MS, () => this.tracerPool.release(line));
   }
 
   private showMuzzleFlash(x: number, y: number, angle: number) {
-    const flash = this.add
-      .circle(x + Math.cos(angle) * 18, y + Math.sin(angle) * 18, 6, 0xffee88, 0.9)
-      .setDepth(501);
-    this.time.delayedCall(TRACER_LIFETIME_MS, () => flash.destroy());
+    const flash = this.muzzleFlashPool.acquire();
+    flash.setPosition(x + Math.cos(angle) * 18, y + Math.sin(angle) * 18).setVisible(true);
+    this.time.delayedCall(TRACER_LIFETIME_MS, () => this.muzzleFlashPool.release(flash));
   }
 
   private showHitMarker() {

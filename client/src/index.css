@@ -2,6 +2,14 @@
   color-scheme: dark;
 }
 
+html,
+body {
+  /* Pull-to-refresh and the browser's edge swipe-back/forward gesture both
+     ride on overscroll — killing it here keeps a missed swipe near the
+     game's edges from leaving the match (Phase 14). */
+  overscroll-behavior: none;
+}
+
 body {
   margin: 0;
   background: #0b0c10;
@@ -9,4 +17,12 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  /* Phones with notches/home indicators (iPhone) — keeps HUD elements clear of them. */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom)
+    env(safe-area-inset-left);
+  box-sizing: border-box;
+
+  -webkit-touch-callout: none; /* no long-press "save image" / context menu on sprites */
+  -webkit-user-select: none;
+  user-select: none;
 }

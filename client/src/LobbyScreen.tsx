@@ -6,6 +6,8 @@ import { ControlsPopupBody, Popup, smallButtonStyle } from './Popup';
 import { clearReconnectToken } from './reconnectToken';
 import { useLeaveHandler } from './useLeaveHandler';
 import { useChatMessages } from './useChatMessages';
+import { IS_TOUCH_DEVICE } from './isTouchDevice';
+import { requestFullscreenAndLockLandscape, unlockAudioContext } from './mobileHardening';
 import type { MatchRoomWireState, PlayerWireState } from './game/net/wireTypes';
 
 function formatMmSs(totalSeconds: number): string {
@@ -47,7 +49,14 @@ export function LobbyScreen({
 
   useLeaveHandler(room, onLeftRoom);
 
-  const handleStart = () => room.send('ready');
+  const handleStart = () => {
+    // The last guaranteed user gesture before the match — both of these
+    // require one, and real sound doesn't land until Phase 15 (Phase 14 just
+    // makes sure it'll work the moment it does).
+    unlockAudioContext();
+    if (IS_TOUCH_DEVICE) void requestFullscreenAndLockLandscape();
+    room.send('ready');
+  };
   const handleRemove = (sessionId: string) => room.send('removePlayer', { sessionId });
   const handleLeave = () => {
     clearReconnectToken(); // the player chose to leave — don't auto-resume this session
