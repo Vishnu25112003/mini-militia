@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { IS_TOUCH_DEVICE } from './isTouchDevice';
+import { playUiClick } from './game/sound';
 import {
   ACTION_IDS,
   ACTION_LABELS,
@@ -46,7 +47,10 @@ export function Popup({
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
           <strong style={{ fontSize: '14px' }}>{title}</strong>
           <button
-            onClick={onClose}
+            onClick={() => {
+              playUiClick();
+              onClose();
+            }}
             style={{ background: 'none', border: 'none', color: '#9aa0ac', cursor: 'pointer' }}
           >
             ✕

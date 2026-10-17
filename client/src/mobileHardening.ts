@@ -26,22 +26,42 @@ export async function requestFullscreenAndLockLandscape(): Promise<void> {
   }
 }
 
+let sharedAudioContext: AudioContext | null | undefined;
+
+/**
+ * The one `AudioContext` the whole app shares — all of `sound.ts`'s
+ * synthesized effects (Phase 15) play through this, so unlocking it once on
+ * the lobby Start tap is enough for every sound after that.
+ */
+export function getAudioContext(): AudioContext | null {
+  if (sharedAudioContext !== undefined) return sharedAudioContext;
+
+  try {
+    const Ctor =
+      window.AudioContext ??
+      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    sharedAudioContext = Ctor ? new Ctor() : null;
+  } catch {
+    sharedAudioContext = null;
+  }
+  return sharedAudioContext;
+}
+
 let audioUnlocked = false;
 
 /**
  * Browsers block Web Audio playback until a user gesture resumes the audio
- * context. There's no sound yet (Phase 15 adds it), but unlocking here means
- * it'll just work once sound effects exist, with no separate "tap to enable
- * sound" prompt needed later.
+ * context. Called from the lobby's Start tap so every sound effect just
+ * works from the first shot of the match, with no separate "tap to enable
+ * sound" prompt needed.
  */
 export function unlockAudioContext(): void {
   if (audioUnlocked) return;
   audioUnlocked = true;
 
+  const ctx = getAudioContext();
+  if (!ctx) return;
   try {
-    const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!Ctor) return;
-    const ctx = new Ctor();
     if (ctx.state === 'suspended') void ctx.resume();
     // A silent buffer play is the classic iOS unlock nudge — resume() alone
     // doesn't always stick on older iOS Safari without an actual play() call.
