@@ -4,6 +4,8 @@ export type RawInput = Omit<PlayerInput, 'sequence'>;
 
 export interface InputSource {
   sample(): RawInput;
+  /** True for exactly one call after the chat-open action fires (Enter on desktop; always false on touch). */
+  consumeChatToggle(): boolean;
   destroy(): void;
 }
 
