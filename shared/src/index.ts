@@ -22,6 +22,7 @@ export * from './physics/map.js';
 export * from './physics/step.js';
 export * from './physics/raycast.js';
 export * from './physics/projectile.js';
+export * from './physics/grenade.js';
 
 // Maps
 export * from './maps/tileset.js';
@@ -34,3 +35,4 @@ export * from './logic/scoring.js';
 export * from './logic/slots.js';
 export * from './logic/validation.js';
 export * from './logic/combat.js';
+export * from './logic/grenades.js';

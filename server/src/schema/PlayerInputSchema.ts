@@ -18,6 +18,7 @@ export const PlayerInputSchema = schema(
     fire: t.boolean().default(false),
     melee: t.boolean().default(false),
     throwGrenade: t.boolean().default(false),
+    switchGrenade: t.boolean().default(false),
     reload: t.boolean().default(false),
     swapSlot: t.boolean().default(false),
     pickupOrPair: t.boolean().default(false),

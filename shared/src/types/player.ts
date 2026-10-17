@@ -20,6 +20,8 @@ export interface PlayerInput {
   fire: boolean;
   melee: boolean;
   throwGrenade: boolean;
+  /** Cycles the selected grenade type (frag → gas → proxy), skipping types at 0. */
+  switchGrenade: boolean;
   reload: boolean;
   swapSlot: boolean;
   pickupOrPair: boolean;
@@ -66,6 +68,12 @@ export interface PlayerState {
   slots: readonly [Slot, Slot];
   activeSlotIndex: 0 | 1;
   grenades: GrenadeInventory;
+  /** Which grenade type the throw button throws right now. */
+  selectedGrenade: GrenadeId;
+  /** Seconds left before another grenade can be thrown; 0 = ready. */
+  grenadeThrowCooldownRemainingSeconds: number;
+  /** Seconds left before another melee swing can be made; 0 = ready. */
+  meleeCooldownRemainingSeconds: number;
   kills: number;
   deaths: number;
   points: number;

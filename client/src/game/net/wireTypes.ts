@@ -14,6 +14,7 @@ export interface PlayerInputWire {
   fire: boolean;
   melee: boolean;
   throwGrenade: boolean;
+  switchGrenade: boolean;
   reload: boolean;
   swapSlot: boolean;
   pickupOrPair: boolean;
@@ -62,6 +63,11 @@ export interface PlayerWireState {
   kills: number;
   deaths: number;
   points: number;
+
+  fragnades: number;
+  gasnades: number;
+  proxynades: number;
+  selectedGrenade: 'Fragnade' | 'Gasnade' | 'Proxynade';
 }
 
 /** Mirrors `server/src/schema/HostSettingsSchema.ts`'s `LoadoutSlotSchema`. */

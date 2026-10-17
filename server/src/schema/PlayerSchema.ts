@@ -34,6 +34,11 @@ export const PlayerSchema = schema(
     kills: t.number().default(0),
     deaths: t.number().default(0),
     points: t.number().default(0),
+
+    fragnades: t.number().default(0),
+    gasnades: t.number().default(0),
+    proxynades: t.number().default(0),
+    selectedGrenade: t.string().default('Fragnade'),
   },
   'PlayerSchema',
 );

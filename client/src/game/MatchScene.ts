@@ -20,6 +20,7 @@ const TRACER_LIFETIME_MS = 80;
 const HIT_MARKER_LIFETIME_MS = 150;
 const DAMAGE_FLASH_LIFETIME_MS = 200;
 const EXPLOSION_FLASH_LIFETIME_MS = 250;
+const GAS_CLOUD_LIFETIME_MS = 5000;
 
 export interface MatchSceneData {
   /** Already connected — the lobby (Phase 05) establishes this before the match starts. */
@@ -57,6 +58,7 @@ export class MatchScene extends Phaser.Scene {
   private hitMarker?: Phaser.GameObjects.Text;
   private damageFlash?: Phaser.GameObjects.Rectangle;
   private zoomLabelText?: Phaser.GameObjects.Text;
+  private grenadeBoxText?: Phaser.GameObjects.Text;
 
   /** Toggled 1x ↔ the currently held gun's own zoom stat (e.g. M93BA 3x) — not a fixed cycle. */
   private zoomedIn = false;
@@ -148,6 +150,16 @@ export class MatchScene extends Phaser.Scene {
     });
     this.room.onMessage('explosion', (msg: { x: number; y: number }) => {
       this.showExplosion(msg.x, msg.y);
+    });
+    this.room.onMessage('grenadeExploded', (msg: { x: number; y: number }) => {
+      this.showExplosion(msg.x, msg.y);
+    });
+    this.room.onMessage('gasLanded', (msg: { x: number; y: number }) => {
+      this.showGasCloud(msg.x, msg.y);
+    });
+    this.room.onMessage('melee', (msg: { attackerId: string; targetId: string }) => {
+      if (msg.attackerId === this.room.sessionId) this.showHitMarker();
+      if (msg.targetId === this.room.sessionId) this.showDamageFlash();
     });
 
     this.inputController = new InputController(this, IS_TOUCH_DEVICE, () => {
@@ -279,6 +291,19 @@ export class MatchScene extends Phaser.Scene {
       })
       .setScrollFactor(0)
       .setDepth(1000);
+
+    this.grenadeBoxText = this.add
+      .text(this.scale.width - 8, 28, '', {
+        fontFamily: 'sans-serif',
+        fontSize: '13px',
+        color: '#e5e7eb',
+        align: 'right',
+      })
+      .setOrigin(1, 0)
+      .setScrollFactor(0)
+      .setDepth(1000)
+      .setInteractive()
+      .on('pointerdown', () => this.inputController?.requestSwitchGrenade());
   }
 
   private showExplosion(x: number, y: number) {
@@ -289,6 +314,17 @@ export class MatchScene extends Phaser.Scene {
       alpha: 0,
       duration: EXPLOSION_FLASH_LIFETIME_MS,
       onComplete: () => flash.destroy(),
+    });
+  }
+
+  /** Placeholder gas cloud — matches the Gasnade's 5-second duration (`MATCH_RULES` / `GRENADES.Gasnade`). */
+  private showGasCloud(x: number, y: number) {
+    const cloud = this.add.circle(x, y, 96, 0x88cc44, 0.3).setDepth(400);
+    this.tweens.add({
+      targets: cloud,
+      alpha: 0,
+      duration: GAS_CLOUD_LIFETIME_MS,
+      onComplete: () => cloud.destroy(),
     });
   }
 
@@ -336,6 +372,15 @@ export class MatchScene extends Phaser.Scene {
       const reloading = slot.reloadRemainingSeconds > 0;
       this.gunBoxText.setText(reloading ? `${label} (reloading…)` : label);
     }
+
+    if (this.grenadeBoxText) {
+      const counts: Record<PlayerWireState['selectedGrenade'], number> = {
+        Fragnade: me.fragnades,
+        Gasnade: me.gasnades,
+        Proxynade: me.proxynades,
+      };
+      this.grenadeBoxText.setText(`${me.selectedGrenade}: ${counts[me.selectedGrenade]}`);
+    }
   }
 
   private updateDebugHud() {
@@ -373,6 +418,7 @@ export class MatchScene extends Phaser.Scene {
       this.inputHandle.data.fire = sample.fire;
       this.inputHandle.data.melee = sample.melee;
       this.inputHandle.data.throwGrenade = sample.throwGrenade;
+      this.inputHandle.data.switchGrenade = sample.switchGrenade;
       this.inputHandle.data.reload = sample.reload;
       this.inputHandle.data.swapSlot = sample.swapSlot;
       this.inputHandle.data.pickupOrPair = sample.pickupOrPair;

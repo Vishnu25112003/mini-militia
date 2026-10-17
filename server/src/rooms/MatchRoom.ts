@@ -1,5 +1,7 @@
 import { Room, Client, type StepContext, type Rewind, type Delayed } from 'colyseus';
 import {
+  GRENADES,
+  GRENADE_RADIUS_PX,
   HOST_SETTING_RANGES,
   MATCH_RULES,
   PLAYER_COLORS,
@@ -8,21 +10,36 @@ import {
   WEAPON_RANGE_PX,
   applyDamage,
   canFireActiveSlot,
+  canMelee,
+  canThrowGrenade,
   damageParamsForShot,
   fireActiveSlot,
+  gravityForSetting,
+  grenadeDamageAtDistance,
   hitscanRangeForWeapons,
+  isFrontHit,
+  isWithinMeleeRange,
+  performMeleeSwing,
   pointsOnDeath,
   pointsOnKill,
   projectileHitsPlayer,
   projectileHitsWall,
   resolveHitscanShot,
+  resolveMeleeClash,
   resolveSplashDamage,
   startReloadActiveSlot,
   step,
+  stepGrenade,
   stepProjectile,
   swapActiveSlot,
+  switchGrenadeType,
+  throwGrenade,
   tickCombatTimers,
+  tickGrenadeThrowCooldown,
+  tickMeleeCooldown,
   validateName,
+  type GrenadeId,
+  type GrenadeProjectile,
   type HitscanTarget,
   type PlayerInput,
   type PlayerState,
@@ -65,6 +82,7 @@ function toPlayerInput(wire: InstanceType<typeof PlayerInputSchema>, tick: numbe
     fire: wire.fire,
     melee: wire.melee,
     throwGrenade: wire.throwGrenade,
+    switchGrenade: wire.switchGrenade,
     reload: wire.reload,
     swapSlot: wire.swapSlot,
     pickupOrPair: wire.pickupOrPair,
@@ -118,6 +136,11 @@ function syncSchemaFromState(
   target.kills = source.kills;
   target.deaths = source.deaths;
   target.points = source.points;
+
+  target.fragnades = source.grenades.Fragnade;
+  target.gasnades = source.grenades.Gasnade;
+  target.proxynades = source.grenades.Proxynade;
+  target.selectedGrenade = source.selectedGrenade;
 }
 
 export class MatchRoom extends Room<{
@@ -134,8 +157,19 @@ export class MatchRoom extends Room<{
   private respawnTimers = new Map<string, Delayed>();
   /** Edge-detects `swapSlot` so holding the button doesn't toggle every tick. */
   private prevSwapHeld = new Map<string, boolean>();
+  /** Edge-detects `switchGrenade` the same way. */
+  private prevSwitchGrenadeHeld = new Map<string, boolean>();
   private projectiles: Projectile[] = [];
   private projectileIdCounter = 0;
+  private grenades: GrenadeProjectile[] = [];
+  private grenadeIdCounter = 0;
+  private gasClouds: Array<{ x: number; y: number; remainingSeconds: number; ownerId: string }> = [];
+  /**
+   * A melee swing isn't applied the instant it lands — it's held pending for
+   * `meleeClashWindowSeconds` so a near-simultaneous swing back can still
+   * register as a clash. Keyed by the attacker's sessionId.
+   */
+  private pendingMeleeHits = new Map<string, { targetId: string; tick: number }>();
 
   inputs = this.defineInput(PlayerInputSchema, {
     sanitize: { moveX: [-1, 1] },
@@ -315,6 +349,8 @@ export class MatchRoom extends Room<{
     this.respawnTimers.get(sessionId)?.clear();
     this.respawnTimers.delete(sessionId);
     this.prevSwapHeld.delete(sessionId);
+    this.prevSwitchGrenadeHeld.delete(sessionId);
+    this.pendingMeleeHits.delete(sessionId);
   }
 
   onDispose() {
@@ -336,6 +372,8 @@ export class MatchRoom extends Room<{
         const input = toPlayerInput(wireInput, ctx.tick);
         latest = step(latest, input, this.catacombs.collisionMap, physicsSettings);
         latest = tickCombatTimers(latest, DT_SECONDS);
+        latest = tickMeleeCooldown(latest, DT_SECONDS);
+        latest = tickGrenadeThrowCooldown(latest, DT_SECONDS);
         latestAimAngle = input.aimAngle;
 
         if (input.reload) latest = startReloadActiveSlot(latest);
@@ -343,6 +381,36 @@ export class MatchRoom extends Room<{
         const swapEdge = input.swapSlot && !this.prevSwapHeld.get(sessionId);
         if (swapEdge) latest = swapActiveSlot(latest);
         this.prevSwapHeld.set(sessionId, input.swapSlot);
+
+        const switchGrenadeEdge = input.switchGrenade && !this.prevSwitchGrenadeHeld.get(sessionId);
+        if (switchGrenadeEdge) latest = switchGrenadeType(latest);
+        this.prevSwitchGrenadeHeld.set(sessionId, input.switchGrenade);
+
+        if (input.throwGrenade && canThrowGrenade(latest)) {
+          const thrown = throwGrenade(latest);
+          latest = thrown.state;
+          this.spawnGrenade(sessionId, latest, input.aimAngle, thrown.thrown);
+        }
+
+        if (input.melee && canMelee(latest)) {
+          latest = performMeleeSwing(latest);
+          const target = this.findMeleeTarget(sessionId, latest);
+          if (target) {
+            const reciprocal = this.pendingMeleeHits.get(target);
+            if (reciprocal && reciprocal.targetId === sessionId) {
+              // `target` swung first (their pending entry already existed) — a clash.
+              this.pendingMeleeHits.delete(target);
+              this.pendingMeleeHits.delete(sessionId);
+              this.applyMeleeClash(target, sessionId);
+              // The clash may have updated (even killed) `sessionId` — fold that back into
+              // `latest`, same reasoning as the hitscan kill-credit fold-back above.
+              const updatedSelf = this.players.get(sessionId);
+              if (updatedSelf) latest = updatedSelf;
+            } else {
+              this.pendingMeleeHits.set(sessionId, { targetId: target, tick: ctx.tick });
+            }
+          }
+        }
 
         if (input.fire && canFireActiveSlot(latest)) {
           const fired = fireActiveSlot(latest, input.aimAngle);
@@ -378,10 +446,261 @@ export class MatchRoom extends Room<{
       if (!latest.alive) this.scheduleRespawn(sessionId);
     }
 
-    // Separate pass, after every player's own turn — a projectile's explosion (even one
-    // fired this very tick) never needs to be folded back into a `latest` local like the
-    // hitscan path above, since every player's end-of-iteration write has already happened.
+    // Separate passes, after every player's own turn — none of these ever need folding back
+    // into a `latest` local like the hitscan/melee paths above, since every player's
+    // end-of-iteration write has already happened by this point.
     this.tickProjectiles();
+    this.tickGrenades();
+    this.resolveExpiredMeleeHits(ctx.tick);
+  }
+
+  /** Nearest alive enemy within melee range, if any. */
+  private findMeleeTarget(attackerId: string, attackerState: PlayerState): string | null {
+    let closestId: string | null = null;
+    let closestDistance = Infinity;
+
+    for (const [otherId, otherState] of this.players) {
+      if (otherId === attackerId || !otherState.alive) continue;
+      const distance = Math.hypot(
+        attackerState.position.x - otherState.position.x,
+        attackerState.position.y - otherState.position.y,
+      );
+      if (distance <= MATCH_RULES.meleeRangePx && distance < closestDistance) {
+        closestId = otherId;
+        closestDistance = distance;
+      }
+    }
+    return closestId;
+  }
+
+  /** A melee swing with nobody swinging back within the clash window — resolves as a clean, instant kill. */
+  private resolveExpiredMeleeHits(tick: number) {
+    if (this.pendingMeleeHits.size === 0) return;
+    const clashWindowTicks = Math.ceil(MATCH_RULES.meleeClashWindowSeconds * TICK_RATE);
+
+    for (const [attackerId, pending] of [...this.pendingMeleeHits]) {
+      if (tick - pending.tick < clashWindowTicks) continue; // still within the window
+      this.pendingMeleeHits.delete(attackerId);
+      this.resolveMeleeKill(attackerId, pending.targetId);
+    }
+  }
+
+  private resolveMeleeKill(attackerId: string, targetId: string) {
+    const attacker = this.players.get(attackerId);
+    const target = this.players.get(targetId);
+    if (!attacker?.alive || !target?.alive) return; // one of them is gone/already dead
+
+    // Melee always kills — ignores health, crouch shield, and spawn shield.
+    const killed: PlayerState = { ...target, health: 0, alive: false };
+    this.players.set(targetId, killed);
+    const targetSchema = this.state.players.get(targetId);
+    if (targetSchema) syncSchemaFromState(targetSchema, killed, targetSchema.aimAngle);
+
+    this.broadcast('melee', { attackerId, targetId });
+    this.handleKill(attackerId, attacker, targetId, killed);
+  }
+
+  /**
+   * `firstHitterId` swung first — they get the kill and only lose a fixed 50
+   * health (or die too, if that leaves them at 0). `secondHitterId` dies
+   * outright, same as any other melee hit.
+   */
+  private applyMeleeClash(firstHitterId: string, secondHitterId: string) {
+    const firstHitter = this.players.get(firstHitterId);
+    const secondHitter = this.players.get(secondHitterId);
+    if (!firstHitter?.alive || !secondHitter?.alive) return;
+
+    this.broadcast('melee', { attackerId: firstHitterId, targetId: secondHitterId });
+
+    const clash = resolveMeleeClash(firstHitter.health);
+    const creditedFirstHitter: PlayerState = {
+      ...firstHitter,
+      health: clash.firstHitterHealthAfter,
+      alive: !clash.firstHitterDies,
+      kills: firstHitter.kills + 1,
+      points: firstHitter.points + pointsOnKill(),
+      gotKillThisLife: true,
+    };
+    this.players.set(firstHitterId, creditedFirstHitter);
+    const firstSchema = this.state.players.get(firstHitterId);
+    if (firstSchema) syncSchemaFromState(firstSchema, creditedFirstHitter, firstSchema.aimAngle);
+
+    const deadSecondHitter: PlayerState = {
+      ...secondHitter,
+      health: 0,
+      alive: false,
+      deaths: secondHitter.deaths + 1,
+      points: secondHitter.points + pointsOnDeath(secondHitter.gotKillThisLife),
+    };
+    this.players.set(secondHitterId, deadSecondHitter);
+    const secondSchema = this.state.players.get(secondHitterId);
+    if (secondSchema) syncSchemaFromState(secondSchema, deadSecondHitter, secondSchema.aimAngle);
+    this.scheduleRespawn(secondHitterId);
+
+    if (clash.firstHitterDies) {
+      // Their own death has no -1 penalty — they got a kill this life (pointsOnDeath(true) === 0).
+      const firstHitterAfterOwnDeath: PlayerState = {
+        ...creditedFirstHitter,
+        deaths: creditedFirstHitter.deaths + 1,
+        points: creditedFirstHitter.points + pointsOnDeath(creditedFirstHitter.gotKillThisLife),
+      };
+      this.players.set(firstHitterId, firstHitterAfterOwnDeath);
+      if (firstSchema) syncSchemaFromState(firstSchema, firstHitterAfterOwnDeath, firstSchema.aimAngle);
+      this.scheduleRespawn(firstHitterId);
+    }
+  }
+
+  private spawnGrenade(ownerId: string, throwerState: PlayerState, angle: number, grenadeId: GrenadeId) {
+    const stats = GRENADES[grenadeId];
+    const speed = MATCH_RULES.grenadeThrowSpeedPxPerSec;
+    const countdownSeconds =
+      stats.trigger.kind === 'fuse'
+        ? stats.trigger.fuseSeconds
+        : stats.trigger.kind === 'arm-and-proximity'
+          ? stats.trigger.armSeconds
+          : 0; // 'on-landing' (Gasnade) has no timer — it triggers on touching the ground
+
+    const grenade: GrenadeProjectile = {
+      id: `${ownerId}-g${this.grenadeIdCounter++}`,
+      ownerId,
+      grenade: grenadeId,
+      x: throwerState.position.x,
+      y: throwerState.position.y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      fuseRemainingSeconds: countdownSeconds,
+      landed: false,
+    };
+    this.grenades.push(grenade);
+    this.broadcast('grenadeThrown', { ownerId, x: grenade.x, y: grenade.y, angle, grenade: grenadeId });
+  }
+
+  private tickGrenades() {
+    this.applyGasDamage();
+    if (this.gasClouds.length > 0) {
+      this.gasClouds = this.gasClouds.filter((cloud) => {
+        cloud.remainingSeconds -= DT_SECONDS;
+        return cloud.remainingSeconds > 0;
+      });
+    }
+
+    if (this.grenades.length === 0) return;
+
+    const stillFlying: GrenadeProjectile[] = [];
+    for (const flying of this.grenades) {
+      const stats = GRENADES[flying.grenade];
+      const wasLanded = flying.landed;
+      const moved = stepGrenade(
+        flying,
+        this.catacombs.collisionMap,
+        gravityForSetting(this.state.settings.gravity),
+        DT_SECONDS,
+      );
+
+      if (stats.trigger.kind === 'fuse' && moved.fuseRemainingSeconds <= 0) {
+        this.explodeGrenade(moved);
+        continue;
+      }
+
+      if (stats.trigger.kind === 'arm-and-proximity') {
+        const armed = moved.fuseRemainingSeconds <= 0;
+        if (armed && this.proxyHasNearbyEnemy(moved)) {
+          this.explodeGrenade(moved);
+          continue;
+        }
+        stillFlying.push(moved);
+        continue;
+      }
+
+      // 'on-landing' (Gasnade) — becomes a stationary cloud the instant it comes to rest.
+      if (stats.trigger.kind === 'on-landing' && !wasLanded && moved.landed) {
+        this.gasClouds.push({
+          x: moved.x,
+          y: moved.y,
+          remainingSeconds: stats.durationSeconds ?? 0,
+          ownerId: moved.ownerId,
+        });
+        this.broadcast('gasLanded', { x: moved.x, y: moved.y });
+        continue;
+      }
+      stillFlying.push(moved);
+    }
+    this.grenades = stillFlying;
+  }
+
+  /** The owner can safely stand next to their own armed Proxynade — it only arms against others. */
+  private proxyHasNearbyEnemy(grenade: GrenadeProjectile): boolean {
+    const radius = GRENADE_RADIUS_PX.small;
+    for (const [sessionId, playerState] of this.players) {
+      if (!playerState.alive || sessionId === grenade.ownerId) continue;
+      if (Math.hypot(playerState.position.x - grenade.x, playerState.position.y - grenade.y) <= radius) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** Fragnade/Proxynade detonation — center-to-edge falloff damage, the owner included (self-damage applies, per the flow). */
+  private explodeGrenade(grenade: GrenadeProjectile) {
+    const stats = GRENADES[grenade.grenade];
+    const radius = GRENADE_RADIUS_PX[stats.radius];
+    this.broadcast('grenadeExploded', { x: grenade.x, y: grenade.y, grenade: grenade.grenade });
+
+    for (const [sessionId, playerState] of this.players) {
+      if (!playerState.alive || playerState.shieldSecondsRemaining > 0) continue;
+
+      const distance = Math.hypot(playerState.position.x - grenade.x, playerState.position.y - grenade.y);
+      const amount = grenadeDamageAtDistance(stats.damage, distance, radius);
+      if (amount <= 0) continue;
+      const crouchAmount = grenadeDamageAtDistance(stats.crouchDamage, distance, radius);
+      const hitDirection = isFrontHit(playerState.facing, grenade.x, playerState.position.x);
+
+      const damaged = applyDamage(playerState, { amount, crouchAmount, hitDirection });
+      this.players.set(sessionId, damaged);
+      const schema = this.state.players.get(sessionId);
+      if (schema) syncSchemaFromState(schema, damaged, schema.aimAngle);
+
+      this.broadcast('hit', { shooterId: grenade.ownerId, targetId: sessionId });
+      if (!damaged.alive) this.handleExplosionKill(grenade.ownerId, sessionId, damaged);
+    }
+  }
+
+  private applyGasDamage() {
+    if (this.gasClouds.length === 0) return;
+    const gasStats = GRENADES.Gasnade;
+    const gasRadius = GRENADE_RADIUS_PX[gasStats.radius];
+
+    for (const [sessionId, playerState] of this.players) {
+      if (!playerState.alive || playerState.shieldSecondsRemaining > 0) continue;
+
+      // No stacking (Dev4-confirmed): standing in overlapping clouds still only takes one cloud's worth.
+      const cloud = this.gasClouds.find(
+        (c) => Math.hypot(playerState.position.x - c.x, playerState.position.y - c.y) <= gasRadius,
+      );
+      if (!cloud) continue;
+
+      const hitDirection = isFrontHit(playerState.facing, cloud.x, playerState.position.x);
+      const damaged = applyDamage(playerState, {
+        amount: gasStats.damage * DT_SECONDS,
+        crouchAmount: gasStats.crouchDamage * DT_SECONDS,
+        hitDirection,
+      });
+      this.players.set(sessionId, damaged);
+      const schema = this.state.players.get(sessionId);
+      if (schema) syncSchemaFromState(schema, damaged, schema.aimAngle);
+
+      if (!damaged.alive) this.handleExplosionKill(cloud.ownerId, sessionId, damaged);
+    }
+  }
+
+  /** Shared by grenade explosions and gas ticks: normal kill credit, or no credit for self-damage / an owner who's since left. */
+  private handleExplosionKill(ownerId: string, victimId: string, victimState: PlayerState) {
+    const ownerState = victimId !== ownerId ? this.players.get(ownerId) : undefined;
+    if (ownerState) {
+      this.handleKill(ownerId, ownerState, victimId, victimState);
+    } else {
+      this.handleDeathNoKillCredit(victimId, victimState);
+    }
   }
 
   /**
@@ -557,17 +876,7 @@ export class MatchRoom extends Room<{
       if (targetSchema) syncSchemaFromState(targetSchema, damaged, targetSchema.aimAngle);
 
       this.broadcast('hit', { shooterId: projectile.ownerId, targetId: hit.targetId });
-
-      if (!damaged.alive) {
-        const shooterState =
-          hit.targetId !== projectile.ownerId ? this.players.get(projectile.ownerId) : undefined;
-        if (shooterState) {
-          this.handleKill(projectile.ownerId, shooterState, hit.targetId, damaged);
-        } else {
-          // Self-damage (own SMAW/RG6, per the flow) or the shooter has since left — no kill credit.
-          this.handleDeathNoKillCredit(hit.targetId, damaged);
-        }
-      }
+      if (!damaged.alive) this.handleExplosionKill(projectile.ownerId, hit.targetId, damaged);
     }
   }
 

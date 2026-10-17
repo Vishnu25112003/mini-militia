@@ -49,15 +49,13 @@ export class KeyboardMouseInputSource implements InputSource {
 
     const melee = Phaser.Input.Keyboard.JustDown(k.melee!);
     const throwGrenade = Phaser.Input.Keyboard.JustDown(k.grenade!);
+    const switchGrenade = Phaser.Input.Keyboard.JustDown(k.switchGrenade!);
     const reload = Phaser.Input.Keyboard.JustDown(k.reload!);
     const swapSlot =
       Phaser.Input.Keyboard.JustDown(k.swap1!) || Phaser.Input.Keyboard.JustDown(k.swap2!);
     const pickupOrPair = Phaser.Input.Keyboard.JustDown(k.pickup!);
 
-    if (melee) logUnwiredAction('melee');
-    if (throwGrenade) logUnwiredAction('throw grenade');
     if (pickupOrPair) logUnwiredAction('pickup/pair');
-    if (Phaser.Input.Keyboard.JustDown(k.switchGrenade!)) logUnwiredAction('switch grenade type');
     if (Phaser.Input.Keyboard.JustDown(k.chat!)) logUnwiredAction('open chat');
 
     return {
@@ -68,6 +66,7 @@ export class KeyboardMouseInputSource implements InputSource {
       fire,
       melee,
       throwGrenade,
+      switchGrenade,
       reload,
       swapSlot,
       pickupOrPair,

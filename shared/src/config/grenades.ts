@@ -54,3 +54,9 @@ export const GRENADES: Record<GrenadeId, GrenadeStats> = {
 };
 
 export const GRENADE_IDS = Object.keys(GRENADES) as GrenadeId[];
+
+/** Pixel radius for each `GrenadeRadius` category — tune during build, same as `config/weaponRange.ts`. */
+export const GRENADE_RADIUS_PX: Record<GrenadeRadius, number> = {
+  small: 64,
+  medium: 96,
+};
