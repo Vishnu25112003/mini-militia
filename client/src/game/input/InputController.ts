@@ -9,6 +9,7 @@ export class InputController {
   private source: InputSource;
   private sequence = 0;
   private pendingSwap = false;
+  private pendingSwitchGrenade = false;
 
   constructor(scene: Phaser.Scene, isTouch: boolean, getPlayerWorldPosition: () => Vector2) {
     this.source = isTouch
@@ -24,11 +25,18 @@ export class InputController {
     this.pendingSwap = true;
   }
 
+  /** One-shot grenade-type switch request — from tapping the grenade box (same as Q / the touch switch button). */
+  requestSwitchGrenade() {
+    this.pendingSwitchGrenade = true;
+  }
+
   sample(): PlayerInput {
     const raw = this.source.sample();
     const swapSlot = raw.swapSlot || this.pendingSwap;
+    const switchGrenade = raw.switchGrenade || this.pendingSwitchGrenade;
     this.pendingSwap = false;
-    return { ...raw, swapSlot, sequence: this.sequence++ };
+    this.pendingSwitchGrenade = false;
+    return { ...raw, swapSlot, switchGrenade, sequence: this.sequence++ };
   }
 
   destroy() {

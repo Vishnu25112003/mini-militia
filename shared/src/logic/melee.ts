@@ -1,4 +1,23 @@
 import { MATCH_RULES } from '../config/matchRules.js';
+import type { PlayerState } from '../types/player.js';
+
+export function canMelee(state: PlayerState): boolean {
+  return state.alive && state.meleeCooldownRemainingSeconds <= 0;
+}
+
+/** Starts the melee cooldown — caller must already have checked `canMelee`. */
+export function performMeleeSwing(state: PlayerState): PlayerState {
+  return { ...state, meleeCooldownRemainingSeconds: MATCH_RULES.meleeCooldownSeconds };
+}
+
+export function tickMeleeCooldown(state: PlayerState, dt: number): PlayerState {
+  if (state.meleeCooldownRemainingSeconds <= 0) return state;
+  return { ...state, meleeCooldownRemainingSeconds: Math.max(0, state.meleeCooldownRemainingSeconds - dt) };
+}
+
+export function isWithinMeleeRange(ax: number, ay: number, bx: number, by: number): boolean {
+  return Math.hypot(ax - bx, ay - by) <= MATCH_RULES.meleeRangePx;
+}
 
 export interface MeleeClashResult {
   firstHitterHealthAfter: number;

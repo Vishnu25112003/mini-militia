@@ -11,6 +11,7 @@ export class TouchInputSource implements InputSource {
   private aimJoystick: VirtualJoystick;
   private meleeButton: TouchButton;
   private grenadeButton: TouchButton;
+  private switchGrenadeButton: TouchButton;
   private reloadButton: TouchButton;
   private pickupButton: TouchButton;
   private lastAimAngle = 0;
@@ -20,6 +21,7 @@ export class TouchInputSource implements InputSource {
 
     this.moveJoystick = new VirtualJoystick(scene, 90, height - 90, 55);
     this.grenadeButton = new TouchButton(scene, 175, height - 160, 'nade');
+    this.switchGrenadeButton = new TouchButton(scene, 175, height - 230, 'switch', 22);
     this.aimJoystick = new VirtualJoystick(scene, width - 90, height - 90, 55);
     this.meleeButton = new TouchButton(scene, width - 175, height - 90, 'melee');
     this.reloadButton = new TouchButton(scene, width - 90, height - 160, 'reload');
@@ -41,11 +43,10 @@ export class TouchInputSource implements InputSource {
 
     const melee = this.meleeButton.consumePress();
     const throwGrenade = this.grenadeButton.consumePress();
+    const switchGrenade = this.switchGrenadeButton.consumePress();
     const reload = this.reloadButton.consumePress();
     const pickupOrPair = this.pickupButton.consumePress();
 
-    if (melee) logUnwiredAction('melee');
-    if (throwGrenade) logUnwiredAction('throw grenade');
     if (pickupOrPair) logUnwiredAction('pickup/pair');
 
     return {
@@ -56,6 +57,7 @@ export class TouchInputSource implements InputSource {
       fire,
       melee,
       throwGrenade,
+      switchGrenade,
       reload,
       swapSlot: false,
       pickupOrPair,
@@ -67,6 +69,7 @@ export class TouchInputSource implements InputSource {
     this.aimJoystick.destroy();
     this.meleeButton.destroy();
     this.grenadeButton.destroy();
+    this.switchGrenadeButton.destroy();
     this.reloadButton.destroy();
     this.pickupButton.destroy();
   }
