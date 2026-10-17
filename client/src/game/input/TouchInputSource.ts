@@ -46,7 +46,6 @@ export class TouchInputSource implements InputSource {
 
     if (melee) logUnwiredAction('melee');
     if (throwGrenade) logUnwiredAction('throw grenade');
-    if (reload) logUnwiredAction('reload');
     if (pickupOrPair) logUnwiredAction('pickup/pair');
 
     return {

@@ -2,6 +2,8 @@ export const GAME_NAME = 'Mini Militia WAN';
 
 // Config
 export * from './config/weapons.js';
+export * from './config/weaponRange.js';
+export * from './config/projectiles.js';
 export * from './config/grenades.js';
 export * from './config/dualPairs.js';
 export * from './config/matchRules.js';
@@ -18,6 +20,8 @@ export * from './types/match.js';
 // Physics
 export * from './physics/map.js';
 export * from './physics/step.js';
+export * from './physics/raycast.js';
+export * from './physics/projectile.js';
 
 // Maps
 export * from './maps/tileset.js';
@@ -29,3 +33,4 @@ export * from './logic/melee.js';
 export * from './logic/scoring.js';
 export * from './logic/slots.js';
 export * from './logic/validation.js';
+export * from './logic/combat.js';

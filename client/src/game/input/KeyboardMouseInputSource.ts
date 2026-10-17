@@ -28,8 +28,6 @@ export class KeyboardMouseInputSource implements InputSource {
       pickup: kb.addKey(K.E),
       chat: kb.addKey(K.ENTER),
     };
-
-    scene.input.on('wheel', () => logUnwiredAction('weapon swap (mouse wheel)'));
   }
 
   sample(): RawInput {
@@ -58,8 +56,6 @@ export class KeyboardMouseInputSource implements InputSource {
 
     if (melee) logUnwiredAction('melee');
     if (throwGrenade) logUnwiredAction('throw grenade');
-    if (reload) logUnwiredAction('reload');
-    if (swapSlot) logUnwiredAction('weapon swap');
     if (pickupOrPair) logUnwiredAction('pickup/pair');
     if (Phaser.Input.Keyboard.JustDown(k.switchGrenade!)) logUnwiredAction('switch grenade type');
     if (Phaser.Input.Keyboard.JustDown(k.chat!)) logUnwiredAction('open chat');
