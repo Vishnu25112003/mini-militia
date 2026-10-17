@@ -96,5 +96,6 @@ function baseSpawnState(
     gotKillThisLife: false,
     shieldSecondsRemaining: MATCH_RULES.spawnShieldSeconds,
     alive: true,
+    respawnRemainingSeconds: 0,
   };
 }

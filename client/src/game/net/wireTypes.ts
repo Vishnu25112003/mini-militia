@@ -58,6 +58,8 @@ export interface PlayerWireState {
   alive: boolean;
   /** Seconds of spawn shield remaining; 0 once it's expired. */
   shieldSecondsRemaining: number;
+  /** Seconds left in the 5s respawn wait; 0 while alive. */
+  respawnRemainingSeconds: number;
   activeSlotIndex: number;
   slot1: SlotWire;
   slot2: SlotWire;
@@ -113,4 +115,6 @@ export interface MatchRoomWireState {
   autoStartRemainingSeconds: number;
   settings: HostSettingsWire;
   groundItems: Map<string, GroundItemWire>;
+  /** Counts down from the host's game-time setting once `phase === 'playing'`; 0 once the match ends. */
+  matchTimeRemainingSeconds: number;
 }

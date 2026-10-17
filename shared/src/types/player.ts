@@ -84,4 +84,6 @@ export interface PlayerState {
   /** Seconds of spawn shield remaining; 0 once it has expired. */
   shieldSecondsRemaining: number;
   alive: boolean;
+  /** Seconds left in the 5s respawn wait; 0 while alive. Drives the live leaderboard's countdown. */
+  respawnRemainingSeconds: number;
 }

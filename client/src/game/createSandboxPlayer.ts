@@ -53,5 +53,6 @@ export function createSandboxPlayer(spawn: Vector2): PlayerState {
     gotKillThisLife: false,
     shieldSecondsRemaining: MATCH_RULES.spawnShieldSeconds,
     alive: true,
+    respawnRemainingSeconds: 0,
   };
 }

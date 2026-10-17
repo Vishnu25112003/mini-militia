@@ -16,6 +16,8 @@ export const MatchRoomState = schema(
     settings: HostSettingsSchema,
     /** Fixed pickup-spot items and dropped/scattered items alike, keyed by item id. */
     groundItems: t.map(GroundItemSchema),
+    /** Counts down from the host's game-time setting once `phase === 'playing'`; 0 once the match ends. */
+    matchTimeRemainingSeconds: t.number().default(0),
   },
   'MatchRoomState',
 );
