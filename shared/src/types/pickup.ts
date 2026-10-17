@@ -12,5 +12,7 @@ export interface PickupItem {
   weapon?: WeaponId;
   /** Set when kind is 'grenadePair'. */
   grenadeType?: GrenadeId;
+  /** Set when kind is 'grenadePair' — starts at 2, can drop to 1 after a partial pickup (carry limit). */
+  grenadeCount?: 1 | 2;
   spawnedAtMs: number;
 }

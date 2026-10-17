@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { logUnwiredAction, type InputSource, type RawInput } from './InputSource';
+import type { InputSource, RawInput } from './InputSource';
 import { VirtualJoystick } from './VirtualJoystick';
 import { TouchButton } from './TouchButton';
 
@@ -47,8 +47,6 @@ export class TouchInputSource implements InputSource {
     const reload = this.reloadButton.consumePress();
     const pickupOrPair = this.pickupButton.consumePress();
 
-    if (pickupOrPair) logUnwiredAction('pickup/pair');
-
     return {
       moveX,
       fly,
@@ -61,6 +59,9 @@ export class TouchInputSource implements InputSource {
       reload,
       swapSlot: false,
       pickupOrPair,
+      // No touch affordance yet for choosing which of a dual pair's guns to swap (same gap as
+      // desktop's Shift modifier) — always swaps the first. Tracked in the Phase 10 doc.
+      replaceSlotChoice: 0,
     };
   }
 

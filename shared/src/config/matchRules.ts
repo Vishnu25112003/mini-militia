@@ -31,4 +31,9 @@ export const MATCH_RULES = {
   grenadeBounceDamping: 0.5,
   /** Below this speed (px/sec) after a bounce, a grenade is considered landed/resting. */
   grenadeLandedSpeedPxPerSec: 20,
+
+  /** How close a player must be for the gun Pickup/Pair button to appear (Dev4-confirmed: short range). */
+  gunPickupRangePx: 40,
+  /** How close for medkits/grenade pairs/boost tanks to pick up automatically by walking over them. */
+  autoPickupRangePx: 32,
 } as const;

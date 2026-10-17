@@ -26,6 +26,7 @@ export class KeyboardMouseInputSource implements InputSource {
       swap2: kb.addKey(K.TWO),
       reload: kb.addKey(K.R),
       pickup: kb.addKey(K.E),
+      pickupChoiceModifier: kb.addKey(K.SHIFT),
       chat: kb.addKey(K.ENTER),
     };
   }
@@ -54,8 +55,10 @@ export class KeyboardMouseInputSource implements InputSource {
     const swapSlot =
       Phaser.Input.Keyboard.JustDown(k.swap1!) || Phaser.Input.Keyboard.JustDown(k.swap2!);
     const pickupOrPair = Phaser.Input.Keyboard.JustDown(k.pickup!);
-
-    if (pickupOrPair) logUnwiredAction('pickup/pair');
+    // Holding Shift while picking up a dual-capable gun chooses the pair's 2nd gun to swap
+    // instead of the 1st — a minimal affordance for the ambiguous "chooseReplace" case until
+    // there's a real 2-button picker UI (Phase 10 tracks that gap).
+    const replaceSlotChoice: RawInput['replaceSlotChoice'] = k.pickupChoiceModifier!.isDown ? 1 : 0;
     if (Phaser.Input.Keyboard.JustDown(k.chat!)) logUnwiredAction('open chat');
 
     return {
@@ -70,6 +73,7 @@ export class KeyboardMouseInputSource implements InputSource {
       reload,
       swapSlot,
       pickupOrPair,
+      replaceSlotChoice,
     };
   }
 

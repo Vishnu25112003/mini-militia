@@ -1,25 +1,32 @@
 import { Room, Client, type StepContext, type Rewind, type Delayed } from 'colyseus';
 import {
   GRENADES,
+  GRENADE_IDS,
   GRENADE_RADIUS_PX,
   HOST_SETTING_RANGES,
   MATCH_RULES,
+  MOVEMENT,
   PLAYER_COLORS,
   PROJECTILE_WEAPONS,
   WEAPONS,
+  WEAPON_IDS,
   WEAPON_RANGE_PX,
+  applyBoostTank,
   applyDamage,
+  applyGunPickup,
+  applyMedkit,
   canFireActiveSlot,
   canMelee,
   canThrowGrenade,
   damageParamsForShot,
+  decideGunPickup,
   fireActiveSlot,
   gravityForSetting,
   grenadeDamageAtDistance,
   hitscanRangeForWeapons,
   isFrontHit,
-  isWithinMeleeRange,
   performMeleeSwing,
+  pickUpGrenadePair,
   pointsOnDeath,
   pointsOnKill,
   projectileHitsPlayer,
@@ -39,23 +46,42 @@ import {
   tickMeleeCooldown,
   validateName,
   type GrenadeId,
+  type GrenadeInventory,
   type GrenadeProjectile,
+  type GunPickupAction,
   type HitscanTarget,
+  type PickupKind,
   type PlayerInput,
   type PlayerState,
   type Projectile,
   type Slot,
   type SplashTarget,
+  type WeaponId,
   type WeaponStats,
 } from '@game/shared';
 import { MatchRoomState } from '../schema/MatchRoomState.js';
 import { PlayerSchema } from '../schema/PlayerSchema.js';
 import { PlayerInputSchema } from '../schema/PlayerInputSchema.js';
 import { SlotSchema } from '../schema/SlotSchema.js';
+import { GroundItemSchema } from '../schema/GroundItemSchema.js';
 import { createServerPlayer, respawnServerPlayer } from '../createServerPlayer.js';
 import { loadCatacombsMap } from '../map.js';
 import { generateUniqueRoomCode } from '../roomCode.js';
 import { applyHostSettingsUpdate, spawnLoadoutFor, type HostSettingsUpdate } from '../hostSettings.js';
+
+interface GroundItem {
+  id: string;
+  x: number;
+  y: number;
+  kind: PickupKind;
+  weapon?: WeaponId;
+  grenadeType?: GrenadeId;
+  grenadeCount?: number;
+  /** Set only for a fixed pickup-spot item — ties it back to its spot for the refresh cycle. */
+  spotId?: string;
+  /** Set only for a dropped/scattered item — when it disappears (the host's map-drops setting). */
+  expiresAtMs?: number;
+}
 
 export const MATCH_ROOM_NAME = 'match_room';
 
@@ -86,6 +112,7 @@ function toPlayerInput(wire: InstanceType<typeof PlayerInputSchema>, tick: numbe
     reload: wire.reload,
     swapSlot: wire.swapSlot,
     pickupOrPair: wire.pickupOrPair,
+    replaceSlotChoice: (wire.replaceSlotChoice === 1 ? 1 : 0) as 0 | 1,
     sequence: tick,
   };
 }
@@ -159,6 +186,8 @@ export class MatchRoom extends Room<{
   private prevSwapHeld = new Map<string, boolean>();
   /** Edge-detects `switchGrenade` the same way. */
   private prevSwitchGrenadeHeld = new Map<string, boolean>();
+  /** Edge-detects `pickupOrPair` the same way. */
+  private prevPickupHeld = new Map<string, boolean>();
   private projectiles: Projectile[] = [];
   private projectileIdCounter = 0;
   private grenades: GrenadeProjectile[] = [];
@@ -170,6 +199,10 @@ export class MatchRoom extends Room<{
    * register as a clash. Keyed by the attacker's sessionId.
    */
   private pendingMeleeHits = new Map<string, { targetId: string; tick: number }>();
+  private groundItems = new Map<string, GroundItem>();
+  private groundItemIdCounter = 0;
+  private pickupCycleTimeout?: Delayed;
+  private dropExpirySweepInterval?: Delayed;
 
   inputs = this.defineInput(PlayerInputSchema, {
     sanitize: { moveX: [-1, 1] },
@@ -324,6 +357,8 @@ export class MatchRoom extends Room<{
     }
 
     this.setFixedTimestep((ctx) => this.fixedTick(ctx), TICK_RATE);
+    this.startPickupCycle();
+    this.dropExpirySweepInterval = this.clock.setInterval(() => this.sweepExpiredDrops(), 1000);
   }
 
   onLeave(client: Client) {
@@ -350,12 +385,15 @@ export class MatchRoom extends Room<{
     this.respawnTimers.delete(sessionId);
     this.prevSwapHeld.delete(sessionId);
     this.prevSwitchGrenadeHeld.delete(sessionId);
+    this.prevPickupHeld.delete(sessionId);
     this.pendingMeleeHits.delete(sessionId);
   }
 
   onDispose() {
     this.autoStartTimeout?.clear();
     this.autoStartCountdownInterval?.clear();
+    this.pickupCycleTimeout?.clear();
+    this.dropExpirySweepInterval?.clear();
     for (const timer of this.respawnTimers.values()) timer.clear();
   }
 
@@ -385,6 +423,12 @@ export class MatchRoom extends Room<{
         const switchGrenadeEdge = input.switchGrenade && !this.prevSwitchGrenadeHeld.get(sessionId);
         if (switchGrenadeEdge) latest = switchGrenadeType(latest);
         this.prevSwitchGrenadeHeld.set(sessionId, input.switchGrenade);
+
+        latest = this.applyAutoPickups(sessionId, latest);
+
+        const pickupEdge = input.pickupOrPair && !this.prevPickupHeld.get(sessionId);
+        if (pickupEdge) latest = this.applyGunPickupInput(latest, input.replaceSlotChoice);
+        this.prevPickupHeld.set(sessionId, input.pickupOrPair);
 
         if (input.throwGrenade && canThrowGrenade(latest)) {
           const thrown = throwGrenade(latest);
@@ -442,6 +486,7 @@ export class MatchRoom extends Room<{
 
       const schemaPlayer = this.state.players.get(sessionId);
       if (schemaPlayer) syncSchemaFromState(schemaPlayer, latest, latestAimAngle);
+      if (latest.alive) this.updateNearbyGunPrompt(sessionId, latest);
 
       if (!latest.alive) this.scheduleRespawn(sessionId);
     }
@@ -535,6 +580,7 @@ export class MatchRoom extends Room<{
     this.players.set(secondHitterId, deadSecondHitter);
     const secondSchema = this.state.players.get(secondHitterId);
     if (secondSchema) syncSchemaFromState(secondSchema, deadSecondHitter, secondSchema.aimAngle);
+    this.scatterItemsOnDeath(deadSecondHitter.position.x, deadSecondHitter.position.y, deadSecondHitter);
     this.scheduleRespawn(secondHitterId);
 
     if (clash.firstHitterDies) {
@@ -546,6 +592,11 @@ export class MatchRoom extends Room<{
       };
       this.players.set(firstHitterId, firstHitterAfterOwnDeath);
       if (firstSchema) syncSchemaFromState(firstSchema, firstHitterAfterOwnDeath, firstSchema.aimAngle);
+      this.scatterItemsOnDeath(
+        firstHitterAfterOwnDeath.position.x,
+        firstHitterAfterOwnDeath.position.y,
+        firstHitterAfterOwnDeath,
+      );
       this.scheduleRespawn(firstHitterId);
     }
   }
@@ -786,6 +837,7 @@ export class MatchRoom extends Room<{
     const victimSchema = this.state.players.get(victimSessionId);
     if (victimSchema) syncSchemaFromState(victimSchema, updatedVictim, victimSchema.aimAngle);
 
+    this.scatterItemsOnDeath(updatedVictim.position.x, updatedVictim.position.y, updatedVictim);
     this.scheduleRespawn(victimSessionId);
     return updatedVictim;
   }
@@ -899,5 +951,208 @@ export class MatchRoom extends Room<{
     const respawned = respawnServerPlayer(previous, spawn, spawnLoadoutFor(this.state.settings));
     this.players.set(sessionId, respawned);
     syncSchemaFromState(schemaPlayer, respawned, 0);
+  }
+
+  // ---------------------------------------------------------------------
+  // Pickups, slots & drops (Phase 10)
+  // ---------------------------------------------------------------------
+
+  /** Visible 60s → all disappear → 5s gap → fresh random set at all spots → repeat, for as long as the match runs. */
+  private startPickupCycle() {
+    this.refreshPickupSpots();
+    this.pickupCycleTimeout = this.clock.setTimeout(
+      () => this.clearPickupSpots(),
+      MATCH_RULES.pickupVisibleSeconds * 1000,
+    );
+  }
+
+  private clearPickupSpots() {
+    for (const [id, item] of [...this.groundItems]) {
+      if (item.spotId !== undefined) this.removeGroundItem(id);
+    }
+    this.pickupCycleTimeout = this.clock.setTimeout(
+      () => this.startPickupCycle(),
+      MATCH_RULES.pickupRefreshGapSeconds * 1000,
+    );
+  }
+
+  private refreshPickupSpots() {
+    for (const spot of this.catacombs.pickupSpots) {
+      const kind = this.randomPickupKind();
+      const id = `spot-${spot.id}-${this.groundItemIdCounter++}`;
+      const item: GroundItem = { id, x: spot.x, y: spot.y, kind, spotId: spot.id };
+
+      if (kind === 'gun') {
+        item.weapon = WEAPON_IDS[Math.floor(Math.random() * WEAPON_IDS.length)]!;
+      } else if (kind === 'grenadePair') {
+        item.grenadeType = GRENADE_IDS[Math.floor(Math.random() * GRENADE_IDS.length)]!;
+        item.grenadeCount = 2;
+      }
+
+      this.groundItems.set(id, item);
+      this.syncGroundItemSchema(item);
+    }
+  }
+
+  /** Every spot gets gun, medkit, or a grenade pair — plus a boost tank, unless the host set boost to 100 (no drain, so no need for one). */
+  private randomPickupKind(): PickupKind {
+    const kinds: PickupKind[] = ['gun', 'medkit', 'grenadePair'];
+    if (this.state.settings.boost < 100) kinds.push('boostTank');
+    return kinds[Math.floor(Math.random() * kinds.length)]!;
+  }
+
+  private syncGroundItemSchema(item: GroundItem) {
+    let schemaItem = this.state.groundItems.get(item.id);
+    if (!schemaItem) {
+      schemaItem = new GroundItemSchema();
+      this.state.groundItems.set(item.id, schemaItem);
+    }
+    schemaItem.kind = item.kind;
+    schemaItem.x = item.x;
+    schemaItem.y = item.y;
+    schemaItem.weapon = item.weapon ?? '';
+    schemaItem.grenadeType = item.grenadeType ?? '';
+    schemaItem.grenadeCount = item.grenadeCount ?? 0;
+  }
+
+  private removeGroundItem(id: string) {
+    this.groundItems.delete(id);
+    this.state.groundItems.delete(id);
+  }
+
+  /** A replaced/broken-pair gun, or a death-scattered gun — the host's "map drops" setting controls its lifetime. */
+  private spawnDroppedGun(x: number, y: number, weapon: WeaponId) {
+    const id = `drop-${this.groundItemIdCounter++}`;
+    const item: GroundItem = {
+      id,
+      x: x + (Math.random() * 2 - 1) * 16,
+      y: y + (Math.random() * 2 - 1) * 16,
+      kind: 'gun',
+      weapon,
+      expiresAtMs: this.clock.currentTime + this.state.settings.mapDropsCountdownSeconds * 1000,
+    };
+    this.groundItems.set(id, item);
+    this.syncGroundItemSchema(item);
+  }
+
+  /** A player's grenade inventory, scattered on death — one ground item per type they were carrying. */
+  private spawnScatteredGrenades(x: number, y: number, grenades: GrenadeInventory) {
+    for (const type of GRENADE_IDS) {
+      const count = grenades[type];
+      if (count <= 0) continue;
+      const id = `drop-${this.groundItemIdCounter++}`;
+      const item: GroundItem = {
+        id,
+        x: x + (Math.random() * 2 - 1) * 16,
+        y: y + (Math.random() * 2 - 1) * 16,
+        kind: 'grenadePair',
+        grenadeType: type,
+        grenadeCount: count,
+        expiresAtMs: this.clock.currentTime + this.state.settings.mapDropsCountdownSeconds * 1000,
+      };
+      this.groundItems.set(id, item);
+      this.syncGroundItemSchema(item);
+    }
+  }
+
+  /** Death scatter — every gun in both slots, and the full grenade inventory, "slowly through the air" (placed with a small random offset; no arc animation). */
+  private scatterItemsOnDeath(x: number, y: number, state: PlayerState) {
+    for (const slot of state.slots) {
+      const weapons = slot.kind === 'single' ? [slot.weapon] : [...slot.weapons];
+      for (const weapon of weapons) this.spawnDroppedGun(x, y, weapon);
+    }
+    this.spawnScatteredGrenades(x, y, state.grenades);
+  }
+
+  private sweepExpiredDrops() {
+    const now = this.clock.currentTime;
+    for (const [id, item] of [...this.groundItems]) {
+      if (item.expiresAtMs !== undefined && now >= item.expiresAtMs) this.removeGroundItem(id);
+    }
+  }
+
+  /** Nearest ground gun within pickup range, if any — drives the client's Pickup/Pair button prompt. */
+  private findNearbyGunItem(playerState: PlayerState): GroundItem | null {
+    let closest: GroundItem | null = null;
+    let closestDistance = Infinity;
+
+    for (const item of this.groundItems.values()) {
+      if (item.kind !== 'gun') continue;
+      const distance = Math.hypot(playerState.position.x - item.x, playerState.position.y - item.y);
+      if (distance <= MATCH_RULES.gunPickupRangePx && distance < closestDistance) {
+        closest = item;
+        closestDistance = distance;
+      }
+    }
+    return closest;
+  }
+
+  private updateNearbyGunPrompt(sessionId: string, playerState: PlayerState) {
+    const schemaPlayer = this.state.players.get(sessionId);
+    if (!schemaPlayer) return;
+
+    const nearby = this.findNearbyGunItem(playerState);
+    if (!nearby || !nearby.weapon) {
+      schemaPlayer.nearbyGunItemId = '';
+      schemaPlayer.nearbyGunAction = '';
+      return;
+    }
+
+    const activeSlot = playerState.slots[playerState.activeSlotIndex];
+    const action: GunPickupAction = decideGunPickup(activeSlot, nearby.weapon);
+    schemaPlayer.nearbyGunItemId = nearby.id;
+    schemaPlayer.nearbyGunAction = action.kind;
+  }
+
+  /** Medkit, boost tank, grenade pair — picked up automatically on walk-over, no button (Dev4-confirmed). */
+  private applyAutoPickups(sessionId: string, state: PlayerState): PlayerState {
+    let latest = state;
+
+    for (const item of [...this.groundItems.values()]) {
+      if (item.kind === 'gun') continue;
+      const distance = Math.hypot(latest.position.x - item.x, latest.position.y - item.y);
+      if (distance > MATCH_RULES.autoPickupRangePx) continue;
+
+      if (item.kind === 'medkit') {
+        const healed = applyMedkit(latest);
+        if (healed) {
+          latest = healed;
+          this.removeGroundItem(item.id);
+        }
+      } else if (item.kind === 'boostTank') {
+        const refilled = applyBoostTank(latest, MOVEMENT.fuelCapacity);
+        if (refilled) {
+          latest = refilled;
+          this.removeGroundItem(item.id);
+        }
+      } else if (item.kind === 'grenadePair' && item.grenadeType) {
+        const result = pickUpGrenadePair(latest.grenades, item.grenadeType, item.grenadeCount ?? 2);
+        if (result.taken > 0) {
+          latest = { ...latest, grenades: result.grenades };
+          const remaining = (item.grenadeCount ?? 2) - result.taken;
+          if (remaining <= 0) {
+            this.removeGroundItem(item.id);
+          } else {
+            item.grenadeCount = remaining;
+            this.syncGroundItemSchema(item);
+          }
+        }
+      }
+    }
+
+    return latest;
+  }
+
+  /** `input.pickupOrPair` on a nearby gun — the server decides pair / replace / chooseReplace / none, per the flow's table. */
+  private applyGunPickupInput(state: PlayerState, replaceSlotChoice: 0 | 1): PlayerState {
+    const nearby = this.findNearbyGunItem(state);
+    if (!nearby || !nearby.weapon) return state;
+
+    const result = applyGunPickup(state, nearby.weapon, replaceSlotChoice);
+    if (result.dropped.length === 0 && result.state === state) return state; // 'none' — can't pick it up
+
+    this.removeGroundItem(nearby.id);
+    for (const weapon of result.dropped) this.spawnDroppedGun(state.position.x, state.position.y, weapon);
+    return result.state;
   }
 }

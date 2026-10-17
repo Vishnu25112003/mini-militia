@@ -39,6 +39,11 @@ export const PlayerSchema = schema(
     gasnades: t.number().default(0),
     proxynades: t.number().default(0),
     selectedGrenade: t.string().default('Fragnade'),
+
+    /** The nearest ground gun's item id within pickup range, or '' — drives the client's button. */
+    nearbyGunItemId: t.string().default(''),
+    /** 'pair' | 'replace' | 'chooseReplace' | 'none' | '' (nothing nearby) — see `@game/shared`'s `GunPickupAction`. */
+    nearbyGunAction: t.string().default(''),
   },
   'PlayerSchema',
 );

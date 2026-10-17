@@ -25,6 +25,8 @@ export interface PlayerInput {
   reload: boolean;
   swapSlot: boolean;
   pickupOrPair: boolean;
+  /** Which of a dual pair's two guns to swap out, for an ambiguous 'chooseReplace' pickup. */
+  replaceSlotChoice: 0 | 1;
   /** Monotonically increasing per-client counter, for reconciliation. */
   sequence: number;
 }
