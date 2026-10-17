@@ -57,3 +57,13 @@ export async function joinRoomByCode(name: string, code: string): Promise<Room> 
     throw mapJoinError(err);
   }
 }
+
+/**
+ * Resumes a previous session via its `room.reconnectionToken` (saved in local
+ * storage) — the "reopen the link, rejoin automatically" path (Phase 12).
+ * Throws on an invalid/expired token (room gone, or the grace window elapsed)
+ * — the caller falls back to normal name entry in that case.
+ */
+export async function reconnectRoom(reconnectionToken: string): Promise<Room> {
+  return await client.reconnect(reconnectionToken);
+}

@@ -504,7 +504,7 @@ export class MatchScene extends Phaser.Scene {
         schemaPlayer.facing,
         schemaPlayer.crouching,
         aimAngle,
-        schemaPlayer.alive,
+        schemaPlayer.alive && schemaPlayer.connected,
         schemaPlayer.health,
         schemaPlayer.shieldSecondsRemaining,
       );

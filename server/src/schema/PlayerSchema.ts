@@ -23,6 +23,8 @@ export const PlayerSchema = schema(
     name: t.string().default('Player'),
     /** Lobby-only: has this player pressed Start? Unused once the match is playing. */
     ready: t.boolean().default(false),
+    /** False while this seat is held open for a disconnected player to reconnect — their character disappears from the map. */
+    connected: t.boolean().default(true),
 
     health: t.number().default(100),
     alive: t.boolean().default(true),

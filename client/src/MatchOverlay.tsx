@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { Room } from '@colyseus/sdk';
 import { rankPlayers } from '@game/shared';
 import { ControlsPopupBody, Popup, smallButtonStyle } from './Popup';
+import { useLeaveHandler } from './useLeaveHandler';
 import type { MatchRoomWireState, PlayerWireState } from './game/net/wireTypes';
 
 /** The match runs physics at 20Hz patches — a React tree doesn't need to re-render that often just to show a timer/leaderboard. */
@@ -88,9 +89,11 @@ function LeaderboardTable({ rows, meId }: { rows: LeaderboardRow[]; meId: string
 export function MatchOverlay({
   room,
   onReturnToLobby,
+  onLeftRoom,
 }: {
   room: Room;
   onReturnToLobby: () => void;
+  onLeftRoom: (message?: string) => void;
 }) {
   const [, forceTick] = useState(0);
   const [showControls, setShowControls] = useState(false);
@@ -100,6 +103,8 @@ export function MatchOverlay({
     const interval = setInterval(() => forceTick((t) => t + 1), OVERLAY_POLL_MS);
     return () => clearInterval(interval);
   }, []);
+
+  useLeaveHandler(room, onLeftRoom);
 
   const state = room.state as unknown as MatchRoomWireState & {
     players: Map<string, PlayerWireState>;

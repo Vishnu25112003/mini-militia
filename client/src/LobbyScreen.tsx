@@ -3,6 +3,8 @@ import type { Room } from '@colyseus/sdk';
 import { useRoomState } from './useRoomState';
 import { HostSettingsPopup } from './HostSettingsPopup';
 import { ControlsPopupBody, Popup, smallButtonStyle } from './Popup';
+import { clearReconnectToken } from './reconnectToken';
+import { useLeaveHandler } from './useLeaveHandler';
 import type { MatchRoomWireState, PlayerWireState } from './game/net/wireTypes';
 
 interface ChatMessage {
@@ -42,18 +44,13 @@ export function LobbyScreen({
   const me = state.players.get(room.sessionId);
 
   useEffect(() => {
-    if (state.phase === 'playing') onMatchStart();
+    // Covers a late joiner or a resumed reconnect landing here while the match is
+    // already 'playing' or showing the final leaderboard ('ended') — redirect
+    // immediately rather than showing lobby UI for a phase that's already moved on.
+    if (state.phase !== 'lobby') onMatchStart();
   }, [state.phase, onMatchStart]);
 
-  useEffect(() => {
-    const handleLeave = (_code: number, reason?: string) => {
-      if (reason === 'room_cancelled') onLeftRoom('The host cancelled the room.');
-      else if (reason === 'removed_by_host') onLeftRoom('You were removed from the room.');
-      else onLeftRoom();
-    };
-    room.onLeave(handleLeave);
-    return () => room.onLeave.remove(handleLeave);
-  }, [room, onLeftRoom]);
+  useLeaveHandler(room, onLeftRoom);
 
   useEffect(() => {
     const handleChat = (msg: ChatMessage) => setMessages((prev) => [...prev, msg]);
@@ -64,6 +61,7 @@ export function LobbyScreen({
   const handleStart = () => room.send('ready');
   const handleRemove = (sessionId: string) => room.send('removePlayer', { sessionId });
   const handleLeave = () => {
+    clearReconnectToken(); // the player chose to leave — don't auto-resume this session
     room.leave();
     onLeftRoom();
   };

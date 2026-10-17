@@ -53,6 +53,8 @@ export interface PlayerWireState {
   name: string;
   /** Lobby-only: has this player pressed Start? Unused once the match is playing. */
   ready: boolean;
+  /** False while this seat is held open for a disconnected player to reconnect. */
+  connected: boolean;
 
   health: number;
   alive: boolean;

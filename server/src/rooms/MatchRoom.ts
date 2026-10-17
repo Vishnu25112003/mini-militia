@@ -208,6 +208,13 @@ export class MatchRoom extends Room<{
   private dropExpirySweepInterval?: Delayed;
   private matchTimerInterval?: Delayed;
   private returnToLobbyTimeout?: Delayed;
+  /**
+   * Sessions currently holding a seat open while disconnected (mid-match only —
+   * Phase 12). Their character "disappears from the map": excluded from `fixedTick`'s
+   * own simulation and from every other player's targeting, but kept in `this.players`/
+   * `this.state.players` (scores, inventory) so a reconnect can resume them.
+   */
+  private disconnectedSessions = new Set<string>();
 
   inputs = this.defineInput(PlayerInputSchema, {
     sanitize: { moveX: [-1, 1] },
@@ -255,31 +262,37 @@ export class MatchRoom extends Room<{
     if (!validateName(name)) {
       throw new Error('invalid_name');
     }
+    if (this.isNameTaken(name)) {
+      throw new Error('name_taken');
+    }
 
     if (this.state.phase === 'lobby') {
       this.joinLobby(client, name);
     } else if (this.state.phase === 'playing') {
-      // Basic late join for now — Phase 12 owns the full reconnect/late-join rules.
+      // A free slot (fewer players than the room's size) is open to anyone with the code until
+      // the match ends — both a brand-new joiner and someone the host removed from the lobby
+      // land here as a fresh joiner (0/0/0). A genuinely disconnected player instead resumes
+      // through `onDrop`'s `allowReconnection` — they never reach `onJoin` at all.
       this.joinMatchInProgress(client, name);
     } else {
       throw new Error('match_ended');
     }
   }
 
-  private joinLobby(client: Client, name: string) {
-    const nameTaken = [...this.state.players.values()].some(
-      (p) => p.name.toLowerCase() === name.toLowerCase(),
-    );
-    if (nameTaken) {
-      throw new Error('name_taken');
-    }
+  /** First-come-first-served, per the flow — includes a currently-disconnected player's still-reserved seat. */
+  private isNameTaken(name: string): boolean {
+    return [...this.state.players.values()].some((p) => p.name.toLowerCase() === name.toLowerCase());
+  }
 
+  private pickUnusedColor(): string {
     const usedColors = new Set([...this.state.players.values()].map((p) => p.color));
-    const color = PLAYER_COLORS.find((c) => !usedColors.has(c)) ?? PLAYER_COLORS[0]!;
+    return PLAYER_COLORS.find((c) => !usedColors.has(c)) ?? PLAYER_COLORS[0]!;
+  }
 
+  private joinLobby(client: Client, name: string) {
     const schemaPlayer = new PlayerSchema();
     schemaPlayer.name = name;
-    schemaPlayer.color = color;
+    schemaPlayer.color = this.pickUnusedColor();
     schemaPlayer.ready = false;
     this.state.players.set(client.sessionId, schemaPlayer);
 
@@ -291,8 +304,7 @@ export class MatchRoom extends Room<{
   private joinMatchInProgress(client: Client, name: string) {
     const spawn =
       this.catacombs.spawnPoints[Math.floor(Math.random() * this.catacombs.spawnPoints.length)]!;
-    const usedColors = new Set([...this.state.players.values()].map((p) => p.color));
-    const color = PLAYER_COLORS.find((c) => !usedColors.has(c)) ?? PLAYER_COLORS[0]!;
+    const color = this.pickUnusedColor();
 
     const playerState = createServerPlayer(spawn, name, color, spawnLoadoutFor(this.state.settings));
     this.players.set(client.sessionId, playerState);
@@ -423,6 +435,7 @@ export class MatchRoom extends Room<{
     for (const id of [...this.groundItems.keys()]) this.removeGroundItem(id);
   }
 
+  /** A player who chose to leave (`room.leave()`) — never gets a reconnection grace. */
   onLeave(client: Client) {
     if (this.state.phase === 'lobby' && client.sessionId === this.state.hostSessionId) {
       this.cancelRoom();
@@ -430,6 +443,56 @@ export class MatchRoom extends Room<{
     }
 
     this.forgetPlayer(client.sessionId);
+  }
+
+  /**
+   * A player who dropped unexpectedly (network loss, tab/app closed, crash).
+   * Mid-match, the flow allows reconnecting "anytime until the match ends" with scores
+   * kept — so their seat (and room-size count) stays reserved via `allowReconnection`
+   * rather than freeing up immediately. In the lobby, there's no grace: a fresh rejoin by
+   * room code is trivial before the match has even started, so this behaves like `onLeave`.
+   */
+  async onDrop(client: Client) {
+    if (this.state.phase !== 'playing') {
+      if (this.state.phase === 'lobby' && client.sessionId === this.state.hostSessionId) {
+        this.cancelRoom();
+      } else {
+        this.forgetPlayer(client.sessionId);
+      }
+      return;
+    }
+
+    const sessionId = client.sessionId;
+    const schemaPlayer = this.state.players.get(sessionId);
+    if (!schemaPlayer) return;
+
+    this.disconnectedSessions.add(sessionId);
+    schemaPlayer.connected = false;
+
+    // "Anytime until the match ends" — the grace window is whatever's left on the match clock.
+    const graceSeconds = Math.max(1, this.state.matchTimeRemainingSeconds);
+    try {
+      await this.allowReconnection(client, graceSeconds);
+      this.handleReconnected(sessionId);
+    } catch {
+      this.disconnectedSessions.delete(sessionId);
+      this.forgetPlayer(sessionId);
+    }
+  }
+
+  /** Rejoin = a normal respawn (random place, random loadout, 3s shield) — kills/deaths/points are untouched, per the flow. */
+  private handleReconnected(sessionId: string) {
+    this.disconnectedSessions.delete(sessionId);
+    const previous = this.players.get(sessionId);
+    const schemaPlayer = this.state.players.get(sessionId);
+    if (!previous || !schemaPlayer) return;
+
+    schemaPlayer.connected = true;
+    const spawn =
+      this.catacombs.spawnPoints[Math.floor(Math.random() * this.catacombs.spawnPoints.length)]!;
+    const respawned = respawnServerPlayer(previous, spawn, spawnLoadoutFor(this.state.settings));
+    this.players.set(sessionId, respawned);
+    syncSchemaFromState(schemaPlayer, respawned, 0);
   }
 
   /** Host left (or disconnected) while still in the lobby — the whole room is cancelled, per the flow. */
@@ -449,6 +512,7 @@ export class MatchRoom extends Room<{
     this.prevSwitchGrenadeHeld.delete(sessionId);
     this.prevPickupHeld.delete(sessionId);
     this.pendingMeleeHits.delete(sessionId);
+    this.disconnectedSessions.delete(sessionId);
   }
 
   onDispose() {
@@ -461,6 +525,11 @@ export class MatchRoom extends Room<{
     for (const timer of this.respawnTimers.values()) timer.clear();
   }
 
+  /** Alive AND connected — a disconnected player's frozen body is untargetable, same as "disappeared from the map" implies. */
+  private isTargetable(sessionId: string, state: PlayerState): boolean {
+    return state.alive && !this.disconnectedSessions.has(sessionId);
+  }
+
   private fixedTick(ctx: StepContext) {
     // The match timer firing sets phase to 'ended' between ticks — the fixed-timestep driver
     // itself can't be unregistered, so this guard is what actually stops simulation.
@@ -471,7 +540,7 @@ export class MatchRoom extends Room<{
     this.tickRespawnCountdowns();
 
     for (const [sessionId, playerState] of this.players) {
-      if (!playerState.alive) continue; // waiting out the respawn timer, which will replace this entry
+      if (!this.isTargetable(sessionId, playerState)) continue; // dead, or holding a seat while disconnected
 
       let latest = playerState;
       let latestAimAngle = this.state.players.get(sessionId)?.aimAngle ?? 0;
@@ -575,7 +644,7 @@ export class MatchRoom extends Room<{
     let closestDistance = Infinity;
 
     for (const [otherId, otherState] of this.players) {
-      if (otherId === attackerId || !otherState.alive) continue;
+      if (otherId === attackerId || !this.isTargetable(otherId, otherState)) continue;
       const distance = Math.hypot(
         attackerState.position.x - otherState.position.x,
         attackerState.position.y - otherState.position.y,
@@ -755,7 +824,7 @@ export class MatchRoom extends Room<{
   private proxyHasNearbyEnemy(grenade: GrenadeProjectile): boolean {
     const radius = GRENADE_RADIUS_PX.small;
     for (const [sessionId, playerState] of this.players) {
-      if (!playerState.alive || sessionId === grenade.ownerId) continue;
+      if (!this.isTargetable(sessionId, playerState) || sessionId === grenade.ownerId) continue;
       if (Math.hypot(playerState.position.x - grenade.x, playerState.position.y - grenade.y) <= radius) {
         return true;
       }
@@ -770,7 +839,7 @@ export class MatchRoom extends Room<{
     this.broadcast('grenadeExploded', { x: grenade.x, y: grenade.y, grenade: grenade.grenade });
 
     for (const [sessionId, playerState] of this.players) {
-      if (!playerState.alive || playerState.shieldSecondsRemaining > 0) continue;
+      if (!this.isTargetable(sessionId, playerState) || playerState.shieldSecondsRemaining > 0) continue;
 
       const distance = Math.hypot(playerState.position.x - grenade.x, playerState.position.y - grenade.y);
       const amount = grenadeDamageAtDistance(stats.damage, distance, radius);
@@ -794,7 +863,7 @@ export class MatchRoom extends Room<{
     const gasRadius = GRENADE_RADIUS_PX[gasStats.radius];
 
     for (const [sessionId, playerState] of this.players) {
-      if (!playerState.alive || playerState.shieldSecondsRemaining > 0) continue;
+      if (!this.isTargetable(sessionId, playerState) || playerState.shieldSecondsRemaining > 0) continue;
 
       // No stacking (Dev4-confirmed): standing in overlapping clouds still only takes one cloud's worth.
       const cloud = this.gasClouds.find(
@@ -844,7 +913,7 @@ export class MatchRoom extends Room<{
     const targets: HitscanTarget[] = [];
 
     for (const [otherSessionId, otherState] of this.players) {
-      if (otherSessionId === shooterSessionId || !otherState.alive) continue;
+      if (otherSessionId === shooterSessionId || !this.isTargetable(otherSessionId, otherState)) continue;
       const schemaPlayer = this.state.players.get(otherSessionId);
       if (!schemaPlayer) continue;
       const rewound = seen.read(schemaPlayer, ['x', 'y']);
@@ -969,7 +1038,7 @@ export class MatchRoom extends Room<{
       let hitPlayerId: string | null = null;
       if (!hitWall) {
         for (const [sessionId, playerState] of this.players) {
-          if (!playerState.alive || sessionId === flying.ownerId) continue;
+          if (!this.isTargetable(sessionId, playerState) || sessionId === flying.ownerId) continue;
           if (projectileHitsPlayer(moved, playerState.position.x, playerState.position.y)) {
             hitPlayerId = sessionId;
             break;
@@ -993,7 +1062,7 @@ export class MatchRoom extends Room<{
 
     const targets: SplashTarget[] = [];
     for (const [sessionId, playerState] of this.players) {
-      if (!playerState.alive) continue;
+      if (!this.isTargetable(sessionId, playerState)) continue;
       targets.push({
         id: sessionId,
         x: playerState.position.x,
