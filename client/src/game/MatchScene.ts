@@ -11,6 +11,9 @@ import catacombsMap from '@game/shared/maps/catacombs.json';
 import tilesetUrl from '@game/shared/maps/tileset.png';
 import { IS_TOUCH_DEVICE } from '../isTouchDevice';
 import { InputController } from './input/InputController';
+import { TouchButton } from './input/TouchButton';
+import { loadTouchLayout } from './input/touchLayout';
+import { registerControl, unregisterControl } from './input/touchControlRegistry';
 import { PlayerView } from './PlayerView';
 import { createPredictStep } from './net/predictStep';
 import type {
@@ -37,6 +40,10 @@ const GAS_CLOUD_LIFETIME_MS = 5000;
 export interface MatchSceneData {
   /** Already connected — the lobby (Phase 05) establishes this before the match starts. */
   room: Room;
+  /** Enter (desktop) or tapping the chat button (touch) — opens the React chat popup. */
+  onOpenChatRequested?: () => void;
+  /** Hands the parent React component a live reference once the scene has booted, so it can call `setChatOpen`. */
+  onSceneReady?: (scene: MatchScene) => void;
 }
 
 /**
@@ -51,6 +58,10 @@ export class MatchScene extends Phaser.Scene {
   // `Predict<any>` to satisfy the no-explicit-any lint rule without
   // reaching across the client/server package boundary for exact types.
   private room!: Room;
+  private onOpenChatRequested?: () => void;
+  private onSceneReady?: (scene: MatchScene) => void;
+  private zoomButton?: TouchButton;
+  private chatButton?: TouchButton;
   private predict!: Predict;
   private inputHandle!: InputHandle<PlayerInputWire>;
   private myReconciler?: Reconciler<PlayerWireState, PlayerInputWire>;
@@ -88,6 +99,8 @@ export class MatchScene extends Phaser.Scene {
 
   init(data: MatchSceneData) {
     this.room = data.room;
+    this.onOpenChatRequested = data.onOpenChatRequested;
+    this.onSceneReady = data.onSceneReady;
   }
 
   preload() {
@@ -123,6 +136,20 @@ export class MatchScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.handleShutdown, this);
 
     this.setUpNetworking();
+    this.onSceneReady?.(this);
+  }
+
+  /**
+   * Disables Phaser's own keyboard handling while the chat popup is focused —
+   * otherwise typing would also trigger game actions bound to the same keys
+   * (e.g. typing "v" would swing melee). Suppressing at the `InputController`
+   * level (rather than disabling Phaser's keyboard plugin outright) avoids a
+   * stuck-key bug: if a movement key is held when chat opens, Phaser would
+   * stop polling it entirely and `isDown` would freeze at `true`. The match
+   * itself keeps running; only this player's own input stops being sent.
+   */
+  setChatOpen(open: boolean) {
+    this.inputController.setSuppressed(open);
   }
 
   private setUpNetworking() {
@@ -220,22 +247,28 @@ export class MatchScene extends Phaser.Scene {
     };
 
     if (IS_TOUCH_DEVICE) {
-      const button = this.add
-        .circle(40, 40, 24, 0xffffff, 0.15)
-        .setScrollFactor(0)
-        .setDepth(1000)
-        .setInteractive();
-      this.add
-        .text(40, 40, 'zoom', { fontFamily: 'sans-serif', fontSize: '10px', color: '#ffffff' })
-        .setOrigin(0.5)
-        .setScrollFactor(0)
-        .setDepth(1001);
-      button.on('pointerdown', toggleZoom);
+      const { width, height } = this.scale;
+      const layout = loadTouchLayout(width, height);
+
+      this.zoomButton = new TouchButton(this, layout.zoomButton.x, layout.zoomButton.y, 'zoom', 24);
+      this.zoomButton.setLayout(layout.zoomButton);
+      registerControl('zoomButton', this.zoomButton, width, height);
+
+      this.chatButton = new TouchButton(this, layout.chatButton.x, layout.chatButton.y, 'chat', 24);
+      this.chatButton.setLayout(layout.chatButton);
+      registerControl('chatButton', this.chatButton, width, height);
     } else {
       this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
         if (pointer.rightButtonDown()) toggleZoom();
       });
     }
+
+    // Edit mode (Phase 13) disables presses while a control is being dragged/resized, so this
+    // runs every frame rather than wiring a one-shot 'pointerdown' listener on the zoom button.
+    this.events.on(Phaser.Scenes.Events.UPDATE, () => {
+      if (this.zoomButton?.consumePress()) toggleZoom();
+      if (this.chatButton?.consumePress()) this.onOpenChatRequested?.();
+    });
   }
 
   /** Re-applied every frame too, so swapping guns while zoomed in updates the zoom level. */
@@ -491,6 +524,8 @@ export class MatchScene extends Phaser.Scene {
       this.inputHandle.send();
     }
 
+    if (this.inputController.consumeChatToggle()) this.onOpenChatRequested?.();
+
     for (const [sessionId, view] of this.playerViews) {
       const schemaPlayer: PlayerWireState | undefined = this.room.state.players.get(sessionId);
       if (!schemaPlayer) continue;
@@ -538,5 +573,10 @@ export class MatchScene extends Phaser.Scene {
       view.label.destroy();
     }
     this.groundItemViews.clear();
+
+    this.zoomButton?.destroy();
+    this.chatButton?.destroy();
+    unregisterControl('zoomButton');
+    unregisterControl('chatButton');
   }
 }

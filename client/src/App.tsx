@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { Room } from '@colyseus/sdk';
 import { reconnectRoom } from './connectToRoom';
-import { GameCanvas } from './game/GameCanvas';
 import { DevDebugPanel } from './game/DevDebugPanel';
 import { JoinScreen } from './JoinScreen';
 import { LobbyScreen } from './LobbyScreen';
-import { MatchOverlay } from './MatchOverlay';
+import { MatchScreen } from './MatchScreen';
 import { OrientationGate } from './OrientationGate';
 import { clearReconnectToken, loadReconnectToken, saveReconnectToken } from './reconnectToken';
 import './App.css';
@@ -105,10 +104,7 @@ function App() {
           <LobbyScreen room={room} onMatchStart={handleMatchStart} onLeftRoom={handleLeftRoom} />
         )}
         {screen === 'match' && room && (
-          <div style={{ position: 'relative' }}>
-            <GameCanvas sceneData={{ room }} />
-            <MatchOverlay room={room} onReturnToLobby={handleReturnToLobby} onLeftRoom={handleLeftRoom} />
-          </div>
+          <MatchScreen room={room} onReturnToLobby={handleReturnToLobby} onLeftRoom={handleLeftRoom} />
         )}
         {import.meta.env.DEV && <DevDebugPanel />}
       </div>

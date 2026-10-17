@@ -5,13 +5,8 @@ import { HostSettingsPopup } from './HostSettingsPopup';
 import { ControlsPopupBody, Popup, smallButtonStyle } from './Popup';
 import { clearReconnectToken } from './reconnectToken';
 import { useLeaveHandler } from './useLeaveHandler';
+import { useChatMessages } from './useChatMessages';
 import type { MatchRoomWireState, PlayerWireState } from './game/net/wireTypes';
-
-interface ChatMessage {
-  name: string;
-  color: string;
-  text: string;
-}
 
 function formatMmSs(totalSeconds: number): string {
   const minutes = Math.floor(totalSeconds / 60);
@@ -38,7 +33,7 @@ export function LobbyScreen({
   const [showGear, setShowGear] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [chatInput, setChatInput] = useState('');
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const messages = useChatMessages(room);
 
   const isHost = room.sessionId === state.hostSessionId;
   const me = state.players.get(room.sessionId);
@@ -51,12 +46,6 @@ export function LobbyScreen({
   }, [state.phase, onMatchStart]);
 
   useLeaveHandler(room, onLeftRoom);
-
-  useEffect(() => {
-    const handleChat = (msg: ChatMessage) => setMessages((prev) => [...prev, msg]);
-    const unsubscribe = room.onMessage('chat', handleChat);
-    return unsubscribe;
-  }, [room]);
 
   const handleStart = () => room.send('ready');
   const handleRemove = (sessionId: string) => room.send('removePlayer', { sessionId });

@@ -2,10 +2,12 @@ import Phaser from 'phaser';
 import type { InputSource, RawInput } from './InputSource';
 import { VirtualJoystick } from './VirtualJoystick';
 import { TouchButton } from './TouchButton';
+import { loadTouchLayout } from './touchLayout';
+import { registerControl, unregisterControl } from './touchControlRegistry';
 
 const DEADZONE = 0.35;
 
-/** Touch default layout, from the flow's control table. */
+/** Touch default layout, from the flow's control table — positions/scale are overridden by any saved layout (Phase 13). */
 export class TouchInputSource implements InputSource {
   private moveJoystick: VirtualJoystick;
   private aimJoystick: VirtualJoystick;
@@ -18,14 +20,36 @@ export class TouchInputSource implements InputSource {
 
   constructor(scene: Phaser.Scene) {
     const { width, height } = scene.scale;
+    const layout = loadTouchLayout(width, height);
 
-    this.moveJoystick = new VirtualJoystick(scene, 90, height - 90, 55);
-    this.grenadeButton = new TouchButton(scene, 175, height - 160, 'nade');
-    this.switchGrenadeButton = new TouchButton(scene, 175, height - 230, 'switch', 22);
-    this.aimJoystick = new VirtualJoystick(scene, width - 90, height - 90, 55);
-    this.meleeButton = new TouchButton(scene, width - 175, height - 90, 'melee');
-    this.reloadButton = new TouchButton(scene, width - 90, height - 160, 'reload');
-    this.pickupButton = new TouchButton(scene, width - 165, height - 160, 'pickup');
+    this.moveJoystick = new VirtualJoystick(scene, layout.moveJoystick.x, layout.moveJoystick.y, 55);
+    this.moveJoystick.setLayout(layout.moveJoystick);
+    this.grenadeButton = new TouchButton(scene, layout.grenadeButton.x, layout.grenadeButton.y, 'nade');
+    this.grenadeButton.setLayout(layout.grenadeButton);
+    this.switchGrenadeButton = new TouchButton(
+      scene,
+      layout.switchGrenadeButton.x,
+      layout.switchGrenadeButton.y,
+      'switch',
+      22,
+    );
+    this.switchGrenadeButton.setLayout(layout.switchGrenadeButton);
+    this.aimJoystick = new VirtualJoystick(scene, layout.aimJoystick.x, layout.aimJoystick.y, 55);
+    this.aimJoystick.setLayout(layout.aimJoystick);
+    this.meleeButton = new TouchButton(scene, layout.meleeButton.x, layout.meleeButton.y, 'melee');
+    this.meleeButton.setLayout(layout.meleeButton);
+    this.reloadButton = new TouchButton(scene, layout.reloadButton.x, layout.reloadButton.y, 'reload');
+    this.reloadButton.setLayout(layout.reloadButton);
+    this.pickupButton = new TouchButton(scene, layout.pickupButton.x, layout.pickupButton.y, 'pickup');
+    this.pickupButton.setLayout(layout.pickupButton);
+
+    registerControl('moveJoystick', this.moveJoystick, width, height);
+    registerControl('aimJoystick', this.aimJoystick, width, height);
+    registerControl('grenadeButton', this.grenadeButton, width, height);
+    registerControl('switchGrenadeButton', this.switchGrenadeButton, width, height);
+    registerControl('meleeButton', this.meleeButton, width, height);
+    registerControl('reloadButton', this.reloadButton, width, height);
+    registerControl('pickupButton', this.pickupButton, width, height);
   }
 
   sample(): RawInput {
@@ -65,6 +89,11 @@ export class TouchInputSource implements InputSource {
     };
   }
 
+  /** Touch has no keyboard — chat is opened by tapping the separate chat button MatchScene owns. */
+  consumeChatToggle(): boolean {
+    return false;
+  }
+
   destroy() {
     this.moveJoystick.destroy();
     this.aimJoystick.destroy();
@@ -73,5 +102,13 @@ export class TouchInputSource implements InputSource {
     this.switchGrenadeButton.destroy();
     this.reloadButton.destroy();
     this.pickupButton.destroy();
+
+    unregisterControl('moveJoystick');
+    unregisterControl('aimJoystick');
+    unregisterControl('grenadeButton');
+    unregisterControl('switchGrenadeButton');
+    unregisterControl('meleeButton');
+    unregisterControl('reloadButton');
+    unregisterControl('pickupButton');
   }
 }
