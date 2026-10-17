@@ -18,6 +18,7 @@ export interface PlayerInputWire {
   reload: boolean;
   swapSlot: boolean;
   pickupOrPair: boolean;
+  replaceSlotChoice: number;
 }
 
 /** Mirrors `server/src/schema/SlotSchema.ts`. */
@@ -68,6 +69,21 @@ export interface PlayerWireState {
   gasnades: number;
   proxynades: number;
   selectedGrenade: 'Fragnade' | 'Gasnade' | 'Proxynade';
+
+  /** The nearest ground gun's item id within pickup range, or '' — drives the Pickup/Pair button. */
+  nearbyGunItemId: string;
+  /** 'pair' | 'replace' | 'chooseReplace' | 'none' | '' */
+  nearbyGunAction: string;
+}
+
+/** Mirrors `server/src/schema/GroundItemSchema.ts`. */
+export interface GroundItemWire {
+  kind: 'gun' | 'medkit' | 'grenadePair' | 'boostTank';
+  x: number;
+  y: number;
+  weapon: string;
+  grenadeType: string;
+  grenadeCount: number;
 }
 
 /** Mirrors `server/src/schema/HostSettingsSchema.ts`'s `LoadoutSlotSchema`. */
@@ -96,4 +112,5 @@ export interface MatchRoomWireState {
   hostSessionId: string;
   autoStartRemainingSeconds: number;
   settings: HostSettingsWire;
+  groundItems: Map<string, GroundItemWire>;
 }

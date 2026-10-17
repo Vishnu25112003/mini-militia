@@ -75,6 +75,7 @@ function toPlayerInput(wire: PlayerInputWire, sequence: number): PlayerInput {
     reload: wire.reload,
     swapSlot: wire.swapSlot,
     pickupOrPair: wire.pickupOrPair,
+    replaceSlotChoice: wire.replaceSlotChoice === 1 ? 1 : 0,
     sequence,
   };
 }

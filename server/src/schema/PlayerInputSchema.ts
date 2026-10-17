@@ -22,6 +22,8 @@ export const PlayerInputSchema = schema(
     reload: t.boolean().default(false),
     swapSlot: t.boolean().default(false),
     pickupOrPair: t.boolean().default(false),
+    /** Which of a dual pair's two guns to swap out, for an ambiguous 'chooseReplace' pickup (0 or 1). */
+    replaceSlotChoice: t.int8().default(0),
   },
   'PlayerInputSchema',
 );

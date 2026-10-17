@@ -13,7 +13,19 @@ import { IS_TOUCH_DEVICE } from '../isTouchDevice';
 import { InputController } from './input/InputController';
 import { PlayerView } from './PlayerView';
 import { createPredictStep } from './net/predictStep';
-import type { MatchRoomWireState, PlayerInputWire, PlayerWireState } from './net/wireTypes';
+import type {
+  GroundItemWire,
+  MatchRoomWireState,
+  PlayerInputWire,
+  PlayerWireState,
+} from './net/wireTypes';
+
+const GROUND_ITEM_COLOR: Record<GroundItemWire['kind'], number> = {
+  gun: 0xffcc00,
+  medkit: 0xe6194b,
+  grenadePair: 0x3cb44b,
+  boostTank: 0x4363d8,
+};
 
 const INTERP_DELAY_MS = 100;
 const TRACER_LIFETIME_MS = 80;
@@ -46,6 +58,10 @@ export class MatchScene extends Phaser.Scene {
   private myLastAimAngle = 0;
 
   private playerViews = new Map<string, PlayerView>();
+  private groundItemViews = new Map<
+    string,
+    { marker: Phaser.GameObjects.Arc; label: Phaser.GameObjects.Text }
+  >();
   private collisionMap!: ReturnType<typeof loadMap>['collisionMap'];
 
   private debugGraphics?: Phaser.GameObjects.Graphics;
@@ -59,6 +75,7 @@ export class MatchScene extends Phaser.Scene {
   private damageFlash?: Phaser.GameObjects.Rectangle;
   private zoomLabelText?: Phaser.GameObjects.Text;
   private grenadeBoxText?: Phaser.GameObjects.Text;
+  private pickupPromptText?: Phaser.GameObjects.Text;
 
   /** Toggled 1x ↔ the currently held gun's own zoom stat (e.g. M93BA 3x) — not a fixed cycle. */
   private zoomedIn = false;
@@ -116,6 +133,28 @@ export class MatchScene extends Phaser.Scene {
     $(this.room.state).players.onRemove((_player: PlayerWireState, sessionId: string) => {
       this.playerViews.get(sessionId)?.destroy();
       this.playerViews.delete(sessionId);
+    });
+
+    $(this.room.state).groundItems.onAdd((item: GroundItemWire, id: string) => {
+      const marker = this.add
+        .circle(item.x, item.y, 10, GROUND_ITEM_COLOR[item.kind], 0.9)
+        .setDepth(300);
+      const labelText = item.kind === 'gun' ? item.weapon : item.kind === 'grenadePair' ? item.grenadeType : item.kind;
+      const label = this.add
+        .text(item.x, item.y - 18, labelText ?? '', {
+          fontFamily: 'sans-serif',
+          fontSize: '10px',
+          color: '#e5e7eb',
+        })
+        .setOrigin(0.5)
+        .setDepth(300);
+      this.groundItemViews.set(id, { marker, label });
+    });
+    $(this.room.state).groundItems.onRemove((_item: GroundItemWire, id: string) => {
+      const view = this.groundItemViews.get(id);
+      view?.marker.destroy();
+      view?.label.destroy();
+      this.groundItemViews.delete(id);
     });
 
     this.predict = Predict.get(this.room, { mode: 'lerp', delay: INTERP_DELAY_MS });
@@ -304,6 +343,32 @@ export class MatchScene extends Phaser.Scene {
       .setDepth(1000)
       .setInteractive()
       .on('pointerdown', () => this.inputController?.requestSwitchGrenade());
+
+    this.pickupPromptText = this.add
+      .text(this.scale.width / 2, this.scale.height - (IS_TOUCH_DEVICE ? 260 : 60), '', {
+        fontFamily: 'sans-serif',
+        fontSize: '13px',
+        color: '#ffcc00',
+      })
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(1000)
+      .setVisible(false);
+  }
+
+  private updatePickupPrompt(me: PlayerWireState) {
+    if (!this.pickupPromptText) return;
+    const label: Record<string, string> = {
+      pair: 'Pair',
+      replace: 'Pick up',
+      chooseReplace: 'Pick up (hold Shift to swap the 2nd gun)',
+    };
+    const text = label[me.nearbyGunAction];
+    if (!text) {
+      this.pickupPromptText.setVisible(false);
+      return;
+    }
+    this.pickupPromptText.setText(IS_TOUCH_DEVICE ? text : `${text} — [E]`).setVisible(true);
   }
 
   private showExplosion(x: number, y: number) {
@@ -422,6 +487,7 @@ export class MatchScene extends Phaser.Scene {
       this.inputHandle.data.reload = sample.reload;
       this.inputHandle.data.swapSlot = sample.swapSlot;
       this.inputHandle.data.pickupOrPair = sample.pickupOrPair;
+      this.inputHandle.data.replaceSlotChoice = sample.replaceSlotChoice;
       this.inputHandle.send();
     }
 
@@ -445,6 +511,7 @@ export class MatchScene extends Phaser.Scene {
       if (isMe) {
         this.fuelBarFill?.setSize(118 * Phaser.Math.Clamp(schemaPlayer.fuel / 100, 0, 1), 8);
         this.updateCombatHud(schemaPlayer);
+        this.updatePickupPrompt(schemaPlayer);
         this.applyZoomForActiveWeapon();
       }
     }
@@ -466,5 +533,10 @@ export class MatchScene extends Phaser.Scene {
     this.inputController?.destroy();
     for (const view of this.playerViews.values()) view.destroy();
     this.playerViews.clear();
+    for (const view of this.groundItemViews.values()) {
+      view.marker.destroy();
+      view.label.destroy();
+    }
+    this.groundItemViews.clear();
   }
 }

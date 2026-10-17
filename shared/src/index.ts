@@ -36,3 +36,4 @@ export * from './logic/slots.js';
 export * from './logic/validation.js';
 export * from './logic/combat.js';
 export * from './logic/grenades.js';
+export * from './logic/pickups.js';
