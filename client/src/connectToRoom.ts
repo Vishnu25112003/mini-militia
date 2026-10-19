@@ -34,9 +34,27 @@ function mapJoinError(err: unknown): RoomJoinError {
   return new RoomJoinError('unknown');
 }
 
+/**
+ * Resolves once the room's first full state snapshot has arrived. The client has no
+ * schema class, so right after join `room.state` has no `players` until the server's
+ * initial sync lands — rendering the lobby before then crashes.
+ */
+export function waitForInitialState(room: Room): Promise<Room> {
+  const hasState = () => Boolean((room.state as { players?: unknown } | undefined)?.players);
+  if (hasState()) return Promise.resolve(room);
+  return new Promise((resolve) => {
+    const handler = () => {
+      if (!hasState()) return;
+      room.onStateChange.remove(handler);
+      resolve(room);
+    };
+    room.onStateChange(handler);
+  });
+}
+
 export async function createRoom(name: string): Promise<Room> {
   try {
-    return await client.create(MATCH_ROOM_NAME, { name });
+    return await waitForInitialState(await client.create(MATCH_ROOM_NAME, { name }));
   } catch (err) {
     throw mapJoinError(err);
   }
@@ -52,7 +70,7 @@ export async function joinRoomByCode(name: string, code: string): Promise<Room> 
   const { roomId } = (await res.json()) as { roomId: string };
 
   try {
-    return await client.joinById(roomId, { name });
+    return await waitForInitialState(await client.joinById(roomId, { name }));
   } catch (err) {
     throw mapJoinError(err);
   }
@@ -65,5 +83,5 @@ export async function joinRoomByCode(name: string, code: string): Promise<Room> 
  * — the caller falls back to normal name entry in that case.
  */
 export async function reconnectRoom(reconnectionToken: string): Promise<Room> {
-  return await client.reconnect(reconnectionToken);
+  return await waitForInitialState(await client.reconnect(reconnectionToken));
 }

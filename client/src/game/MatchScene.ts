@@ -6,7 +6,7 @@ import {
   type Reconciler,
   type Room,
 } from '@colyseus/sdk';
-import { GAME_NAME, WEAPONS, loadMap, type TiledMapJson, type WeaponId } from '@game/shared';
+import { GAME_NAME, MOVEMENT, WEAPONS, loadMap, type TiledMapJson, type WeaponId } from '@game/shared';
 import catacombsMap from '@game/shared/maps/catacombs.json';
 import tilesetUrl from '@game/shared/maps/tileset.png';
 import { IS_TOUCH_DEVICE } from '../isTouchDevice';
@@ -224,6 +224,9 @@ export class MatchScene extends Phaser.Scene {
       const roomState = this.room.state as unknown as MatchRoomWireState;
       this.myReconciler = this.predict.reconciler(myPlayer, {
         input: this.inputHandle,
+        // The server only calls setFixedTimestep when the match starts, after clients joined,
+        // so the input handle never learns the tick rate — pass it explicitly.
+        stepMs: 1000 / MOVEMENT.tickRate,
         fields: ['x', 'y', 'vx', 'vy', 'facing', 'crouching', 'onGround', 'fuel'],
         step: createPredictStep(this.collisionMap, {
           gravity: roomState.settings.gravity,
