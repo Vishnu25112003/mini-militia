@@ -40,17 +40,17 @@ Own 2D jetpack shooter that plays like Mini Militia Classic, with **friends play
 | 03 | [[Phase 03 - Local Movement Sandbox]] | Movement, jetpack, crouch, touch + PC controls (offline) | 🟨 (built; needs Dev4 playtest) |
 | 04 | [[Phase 04 - Networking Foundation]] | 8 players in sync over the internet | 🟨 (built + verified locally; needs real devices + VPS) |
 | 05 | [[Phase 05 - Room and Lobby]] | Names, room codes, lobby, start / auto-start, lobby chat | 🟨 (built + verified locally; needs WhatsApp/real-device check) |
-| 06 | [[Phase 06 - Host Settings and Default Loadout]] | 6 host settings working | ⬜ |
-| 07 | [[Phase 07 - Combat Core]] | Shoot, damage, death, respawn with one gun | ⬜ |
-| 08 | [[Phase 08 - Full Weapon Set]] | All 15 guns, zoom, dual wield, self-damage | ⬜ |
-| 09 | [[Phase 09 - Grenades and Melee]] | 3 grenades, melee, melee clash | ⬜ |
-| 10 | [[Phase 10 - Pickups Slots and Drops]] | Pickup cycle, pair logic, drops, death scatter | ⬜ |
-| 11 | [[Phase 11 - Scoring Timer and Leaderboard]] | Points, timer, live + final leaderboard | ⬜ |
-| 12 | [[Phase 12 - Disconnect Reconnect and Late Join]] | Reconnect, late join, host leaving | ⬜ |
-| 13 | [[Phase 13 - HUD Controls Customization and Chat]] | Full HUD, customization, rebinding, in-match chat | ⬜ |
-| 14 | [[Phase 14 - Mobile Browser Hardening]] | Landscape, PWA, gestures, sound, performance | ⬜ |
-| 15 | [[Phase 15 - Real Art and Sound]] | Original art and sound replace placeholders | ⬜ |
-| 16 | [[Phase 16 - Playtesting and Balance]] | Every rule verified with friends, balance tuned | ⬜ |
+| 06 | [[Phase 06 - Host Settings and Default Loadout]] | 6 host settings working | ✅ (built; awaiting Dev4 approval) |
+| 07 | [[Phase 07 - Combat Core]] | Shoot, damage, death, respawn with one gun | ✅ (built; awaiting Dev4 approval) |
+| 08 | [[Phase 08 - Full Weapon Set]] | All 15 guns, zoom, dual wield, self-damage | ✅ (built; awaiting Dev4 approval) |
+| 09 | [[Phase 09 - Grenades and Melee]] | 3 grenades, melee, melee clash | ✅ (built; awaiting Dev4 approval) |
+| 10 | [[Phase 10 - Pickups Slots and Drops]] | Pickup cycle, pair logic, drops, death scatter | ✅ (built; awaiting Dev4 approval) |
+| 11 | [[Phase 11 - Scoring Timer and Leaderboard]] | Points, timer, live + final leaderboard | ✅ (built; awaiting Dev4 approval) |
+| 12 | [[Phase 12 - Disconnect Reconnect and Late Join]] | Reconnect, late join, host leaving | ✅ (built; awaiting Dev4 approval) |
+| 13 | [[Phase 13 - HUD Controls Customization and Chat]] | Full HUD, customization, rebinding, in-match chat | ✅ (built; awaiting Dev4 approval) |
+| 14 | [[Phase 14 - Mobile Browser Hardening]] | Landscape, PWA, gestures, sound, performance | ✅ (built; awaiting Dev4 approval) |
+| 15 | [[Phase 15 - Real Art and Sound]] | Original art and sound replace placeholders | ✅ (built; awaiting Dev4 approval) |
+| 16 | [[Phase 16 - Playtesting and Balance]] | Every rule verified with friends, balance tuned | ✅ (built; awaiting Dev4 approval) |
 | 17 | [[Phase 17 - Production Deployment]] | Live on the final VPS | ⬜ |
 
 ## Build order logic

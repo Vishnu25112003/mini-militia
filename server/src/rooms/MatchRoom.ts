@@ -608,6 +608,7 @@ export class MatchRoom extends Room<{
                 x: latest.position.x,
                 y: latest.position.y,
                 angle: rayAngle,
+                weapon: fired.weaponsFired[0]?.id,
               });
               // May return the shooter's own state updated with kill credit — fold it into
               // `latest` so the end-of-iteration `this.players.set(sessionId, latest)` below

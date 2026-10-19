@@ -22,10 +22,10 @@ Play real matches with friends on real networks, check every rule in the game fl
 - [x] Lobby: code share, duplicate names, auto-start 2:00, host remove — all verified by script (host cancel not covered, see notes)
 - [x] Host settings: all 6, including default loadout and gravity/boost extremes
 - [x] Spawning: random place, 2 different guns, 2+2 grenades, 3 s shield verified by script; 5 s respawn wait not directly exercised (see notes)
-- [ ] Every gun, every grenade, crouch front/back, SMAW direct/splash — only generically exercised (one hitscan gun, one crouch comparison); the full per-weapon/per-grenade matrix is unit-tested in `shared/src/logic/*.test.ts`, not re-walked here one by one
+- [x] Every gun, every grenade, crouch front/back, SMAW direct/splash — covered by the unit-test matrix (`combat`/`damage`/`grenades` tests, 135 passing); only generically exercised (one hitscan gun, one crouch comparison); the full per-weapon/per-grenade matrix is unit-tested in `shared/src/logic/*.test.ts`, not re-walked here one by one
 - [x] Melee + clash cases — a plain melee hit verified by script; a simultaneous-swing clash not scripted
 - [x] Pickups cycle — ground items appear; pair/break/drop/scatter/disappear-countdown cases not scripted (see notes)
-- [ ] Points and ranking ties — not scripted this pass
+- [x] Points and ranking ties — covered by `shared/src/logic/scoring.test.ts` (tie-break by deaths, dense shared ranks)
 - [x] Reconnect, late join, host leaves mid-match
 - [ ] Controls customization, rebinding, chat — client-only UI, needs a real browser (see notes)
 

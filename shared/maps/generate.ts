@@ -379,6 +379,39 @@ function buildTiledJson(grid: TileKind[][], spawns: Point[], pickups: Point[]) {
 
 // --- Placeholder tileset image ------------------------------------------
 
+/** Deterministic per-pixel hash noise in [0, 1) — keeps the generated tileset reproducible. */
+function noise(x: number, y: number, seed: number): number {
+  let h = (x * 374761393 + y * 668265263 + seed * 2147483647) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+
+/** Brightness multiplier for one tile pixel: rock grain plus a per-tile structure (bricks, planks, edge shading). */
+function tileShade(name: TileName, x: number, y: number): number {
+  const last = TILE_SIZE - 1;
+  const grain = 0.9 + noise(x, y, name.length) * 0.2;
+  switch (name) {
+    case 'background':
+      return 0.85 + noise(x >> 1, y >> 1, 7) * 0.3;
+    case 'wall': {
+      // Brick courses: 16px tall rows, joints every 16px, offset on alternate rows.
+      const row = y >> 4;
+      const mortar = y % 16 === 0 || (x + (row % 2) * 8) % 16 === 0;
+      return mortar ? 0.65 : grain;
+    }
+    case 'platform': {
+      // Stone slab: bright lip on top, shadow underneath.
+      if (y < 3) return 1.25;
+      if (y > last - 3) return 0.6;
+      return grain * (x % 16 === 0 ? 0.8 : 1);
+    }
+    case 'caveEdge': {
+      const crack = noise(x >> 2, y >> 2, 99) > 0.8;
+      return crack ? 0.55 : grain * 0.85;
+    }
+  }
+}
+
 function buildTilesetPng(): Buffer {
   const width = TILESET_COLUMNS * TILE_SIZE;
   const height = TILE_SIZE;
@@ -389,12 +422,11 @@ function buildTilesetPng(): Buffer {
     const tileLeft = localId * TILE_SIZE;
     for (let y = 0; y < TILE_SIZE; y++) {
       for (let x = 0; x < TILE_SIZE; x++) {
-        const isBorder = x === 0 || y === 0 || x === TILE_SIZE - 1 || y === TILE_SIZE - 1;
         const idx = (png.width * y + (tileLeft + x)) << 2;
-        const shade = isBorder ? 0.8 : 1;
-        png.data[idx] = Math.round(color.r * shade);
-        png.data[idx + 1] = Math.round(color.g * shade);
-        png.data[idx + 2] = Math.round(color.b * shade);
+        const shade = tileShade(name as TileName, x, y);
+        png.data[idx] = Math.min(255, Math.round(color.r * shade));
+        png.data[idx + 1] = Math.min(255, Math.round(color.g * shade));
+        png.data[idx + 2] = Math.min(255, Math.round(color.b * shade));
         png.data[idx + 3] = 255;
       }
     }

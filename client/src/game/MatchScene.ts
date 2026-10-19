@@ -109,6 +109,11 @@ export class MatchScene extends Phaser.Scene {
   private muzzleFlashPool = new EffectPool(() =>
     this.add.circle(0, 0, 6, 0xffee88, 0.9).setDepth(501),
   );
+  // Dedicated Flame / Phasr visuals — flame is a short orange puff, laser a thick cyan beam.
+  private flamePuffPool = new EffectPool(() => this.add.circle(0, 0, 9, 0xff7722, 0.7).setDepth(501));
+  private laserBeamPool = new EffectPool(() =>
+    this.add.line(0, 0, 0, 0, 0, 0, 0x55ffff, 0.9).setOrigin(0, 0).setLineWidth(4).setDepth(500),
+  );
   private explosionFlashPool = new EffectPool(() =>
     this.add.circle(0, 0, 48, 0xffaa33, 0.5).setDepth(502),
   );
@@ -227,8 +232,10 @@ export class MatchScene extends Phaser.Scene {
       });
     }
 
-    this.room.onMessage('shotFired', (msg: { shooterId: string; x: number; y: number; angle: number }) => {
-      this.showTracer(msg.x, msg.y, msg.angle);
+    this.room.onMessage('shotFired', (msg: { shooterId: string; x: number; y: number; angle: number; weapon?: string }) => {
+      if (msg.weapon === 'Flame') this.showFlamePuff(msg.x, msg.y, msg.angle);
+      else if (msg.weapon === 'Phasr') this.showLaserBeam(msg.x, msg.y, msg.angle);
+      else this.showTracer(msg.x, msg.y, msg.angle);
       if (msg.shooterId === this.room.sessionId) this.showMuzzleFlash(msg.x, msg.y, msg.angle);
       playHitscanShot();
     });
@@ -469,6 +476,20 @@ export class MatchScene extends Phaser.Scene {
     const line = this.tracerPool.acquire();
     line.setTo(x, y, x + Math.cos(angle) * length, y + Math.sin(angle) * length).setVisible(true);
     this.time.delayedCall(TRACER_LIFETIME_MS, () => this.tracerPool.release(line));
+  }
+
+  private showFlamePuff(x: number, y: number, angle: number) {
+    const puff = this.flamePuffPool.acquire();
+    const distance = 24 + Math.random() * 40;
+    puff.setPosition(x + Math.cos(angle) * distance, y + Math.sin(angle) * distance).setVisible(true);
+    this.time.delayedCall(TRACER_LIFETIME_MS * 2, () => this.flamePuffPool.release(puff));
+  }
+
+  private showLaserBeam(x: number, y: number, angle: number) {
+    const length = 500;
+    const beam = this.laserBeamPool.acquire();
+    beam.setTo(x, y, x + Math.cos(angle) * length, y + Math.sin(angle) * length).setVisible(true);
+    this.time.delayedCall(TRACER_LIFETIME_MS * 2, () => this.laserBeamPool.release(beam));
   }
 
   private showMuzzleFlash(x: number, y: number, angle: number) {

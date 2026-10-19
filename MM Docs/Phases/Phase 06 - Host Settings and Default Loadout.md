@@ -43,8 +43,8 @@ The host taps the **map card** → a popup with all 6 match settings → values 
 ### 3. Apply settings in the match
 - [x] Gravity and boost passed into shared `physics.step`
 - [x] **Boost = 100:** no drain, **boost bar stays full** (unchanged shared `fuelDrainRateForSetting` behavior, now fed live); boost tanks excluded from pickups is Phase 10's job
-- [ ] Game time used by the match timer (Phase 11 — setting is stored/synced, timer itself isn't built yet)
-- [ ] Map drops countdown stored for drops/scatter (Phase 10 — setting is stored/synced, drops themselves aren't built yet)
+- [x] Game time used by the match timer (wired in Phase 11: `matchTimeRemainingSeconds` starts from `settings.gameTimeSeconds`)
+- [x] Map drops countdown used for drops/scatter (wired in Phase 10: ground-item `expiresAtMs` from `mapDropsCountdownSeconds`)
 - [x] Player count = room size (join limit via dynamic `maxClients`; late join limit comes for free from the same mechanism)
 
 ### 4. Default loadout picker
@@ -63,5 +63,5 @@ The host taps the **map card** → a popup with all 6 match settings → values 
 - ~~Should non-host players be able to **view** (read-only) the full settings, or only what the map card shows?~~ Resolved: non-hosts can open the same popup read-only (no edit controls).
 
 ## Approval gate
-- [ ] All acceptance criteria met
+- [x] All acceptance criteria met
 - [ ] **Dev4 approval to move to Phase 07**
