@@ -31,19 +31,19 @@ Replace all placeholder shapes and sounds with **original** doodle-style art and
 - [x] **Character:** one default avatar, designed so the **outfit can be color-tinted** (8 colors); animations: idle, walk, fly, crouch, melee, death
 - [x] **Guns (15):** side-view sprites matching gun box icons
 - [x] **Grenades (3)**, **medkit**, **boost tank** pickups
-- [ ] **Map tileset** (32 px) matching the Catacombs-style layout; background
-- [ ] **Effects:** muzzle flash, tracers, explosion, gas cloud, spawn shield, crouch shield done; flame and laser still reuse the generic projectile effect (see Implementation notes)
+- [x] **Map tileset** (32 px) matching the Catacombs-style layout; background — redrawn with textured brick/slab/rock tiles (generated in `shared/maps/generate.ts`)
+- [x] **Effects:** muzzle flash, tracers, explosion, gas cloud, spawn shield, crouch shield, plus dedicated flame puffs and laser beam (`shotFired` now carries `weapon`)
 - [x] **UI icons:** joysticks, buttons, gun box, grenade switch, chat, zoom, lobby screens, map card thumbnail
 - [x] **Sounds:** each gun, reload, explosion, gas, flame, melee, pickup, jetpack, hit, death, UI clicks, countdown
 
 ## Tasks
 - [x] Style guide (line thickness, palette, sizes) so everything matches
-- [ ] Pack sprites into texture atlases
+- [x] Pack sprites into texture atlases — n/a: all sprites are vector `Graphics`, no bitmap sprites to pack (the only bitmap is the tileset)
 - [x] Swap placeholders without changing collision sizes (gameplay must not change)
 - [x] Re-check performance (Phase 14 targets)
 
 ## Acceptance criteria
-- [ ] No placeholder art or sound left — the map tileset is still the Phase 03 placeholder; everything else is replaced (see Implementation notes)
+- [x] No placeholder art or sound left — tileset redrawn, flame/laser effects added
 - [x] Colors still clearly identify all 8 players
 - [x] Performance still meets Phase 14 targets (not measured on real hardware; no new allocations introduced)
 
