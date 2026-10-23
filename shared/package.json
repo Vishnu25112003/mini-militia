@@ -1,0 +1,25 @@
+{
+  "name": "@game/shared",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "index.ts",
+  "types": "index.ts",
+  "exports": {
+    ".": "./index.ts",
+    "./maps/*": "./maps/*"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "generate-map": "tsx maps/tools/generate-catacombs.ts",
+    "validate-map": "tsx maps/validate.ts",
+    "build": "tsc --noEmit && npm run validate-map",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/pngjs": "^6.0.5",
+    "pngjs": "^7.0.0",
+    "tsx": "^4.23.15",
+    "vitest": "^5.0.5"
+  }
+}

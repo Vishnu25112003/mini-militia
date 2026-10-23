@@ -1,0 +1,34 @@
+{
+  "name": "mini-militia-wan",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Mini Militia-style jetpack shooter for friends over the internet (WAN). See Mini-Militia-WAN-Plan/.",
+  "type": "module",
+  "workspaces": [
+    "shared",
+    "server",
+    "client"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n server,client -c blue,green \"npm run dev -w @game/server\" \"npm run dev -w @game/client\"",
+    "dev:server": "npm run dev -w @game/server",
+    "dev:client": "npm run dev -w @game/client",
+    "build": "npm run build -w @game/shared && npm run build -w @game/server && npm run build -w @game/client",
+    "start:server": "npm run start -w @game/server",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "concurrently": "^10.0.6",
+    "eslint": "^10.13.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "prettier": "^3.9.10",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.72.0"
+  }
+}

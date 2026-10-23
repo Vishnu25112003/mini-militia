@@ -1,0 +1,8 @@
+node_modules
+dist
+legacy
+Mini-Militia-WAN-Plan
+package-lock.json
+shared/maps/*.json
+*.tmj
+*.tsj
