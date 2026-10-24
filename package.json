@@ -1,0 +1,25 @@
+{
+  "name": "catacombs",
+  "version": "0.1.0",
+  "private": true,
+  "description": "LAN multiplayer web rebuild of Mini Militia Classic (Catacombs map)",
+  "type": "module",
+  "scripts": {
+    "extract": "node tools/extract.mjs",
+    "start": "node server/index.mjs",
+    "test": "node --test tests/ && playwright test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "adm-zip": "^0.6.1",
+    "opentype.js": "^2.0.0",
+    "pngjs": "^7.0.0",
+    "qrcode": "^1.5.4",
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1"
+  }
+}

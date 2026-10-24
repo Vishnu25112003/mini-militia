@@ -1,0 +1,35 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "gradient-text",
+        "value": "*",
+        "files": [
+          "public/css/app.css"
+        ],
+        "createdAt": "2026-10-24T09:46:37.240Z",
+        "reason": "User chose 'Match the sheet' (AskUserQuestion); the contact sheet's CATACOMBS title is stone-textured lettering, rendered as a tileset texture via background-clip:text on .title-stone only"
+      },
+      {
+        "rule": "icon-tile-stack",
+        "value": "*",
+        "files": [
+          "public/index.html"
+        ],
+        "createdAt": "2026-10-24T09:59:49.451Z",
+        "reason": "User's contact sheet (they chose 'Match the sheet') shows icon-over-label lobby tiles (Leave/Settings/Chat) and icon-over-text system message cards"
+      },
+      {
+        "rule": "gradient-text",
+        "value": "*",
+        "files": [
+          "public/index.html"
+        ],
+        "createdAt": "2026-10-24T09:59:49.472Z",
+        "reason": "User's contact sheet title is stone-textured lettering; .title-stone uses a tileset texture via background-clip:text (same exception already recorded for app.css)"
+      }
+    ]
+  }
+}
